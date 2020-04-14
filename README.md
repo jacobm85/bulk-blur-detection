@@ -1,5 +1,5 @@
 # Bulk Blur Detector
-This script is based on a project from (pyimagesearch)[https://www.pyimagesearch.com]. It will process a directory of pictures and autonomously move the blurry ones to a different folder.
+This script is based on a project from [pyimagesearch](https://www.pyimagesearch.com). It will process a directory of pictures and autonomously move the blurry ones to a different folder.
 
 This is specially useful to me as a hobbist photographer, so I can quickly discard blurry pictures without having to manually check every one of them.
 
