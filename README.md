@@ -1,5 +1,6 @@
 # Bulk Blur Detector
 This script is based on a project from (pyimagesearch)[https://www.pyimagesearch.com]. It will process a directory of pictures and autonomously move the blurry ones to a different folder.
+
 This is specially useful to me as a hobbist photographer, so I can quickly discard blurry pictures without having to manually check every one of them.
 
 ## Files
@@ -27,4 +28,5 @@ This is a simple script to blur random images from a directory. It's meant to be
 
 ## Requirements
 This script requires Python OpenCV, you can install it through ```pip```
+
 ```pip install opencv-python```
