@@ -2,9 +2,10 @@ from flask import Flask, jsonify, send_from_directory, render_template, request,
 import subprocess
 import os
 from flask_socketio import SocketIO, emit
+import eventlet
 
 app = Flask(__name__)
-socketio = SocketIO(app)
+socketio = SocketIO(app, async_mode='eventlet')
 
 BLUR_DETECTOR_SCRIPT = '/app/blur_detector.py'
 BASE_DIR = '/'  # Change this to your desired path
