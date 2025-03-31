@@ -2,27 +2,57 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Blur detector</title>
+    <title>Blur Detector</title>
     <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
     <style>
-        .directory {
-            font-weight: bold;
+        body {
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            width: 80%;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .file-browser {
+            background-color: #f0f0f0;
+            border: 1px solid #ccc;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        .directory, .file {
+            margin: 5px 0;
+            padding: 5px;
             cursor: pointer;
         }
-        .file {
-            cursor: pointer;
+        .directory {
+            font-weight: bold;
+        }
+        .actions {
+            text-align: right;
+        }
+        .form-section {
+            text-align: center;
+            margin-top: 20px;
         }
     </style>
 </head>
 <body>
-    <h1>File Browser</h1>
-    <div id="file-browser"></div>
-    <form id="process-form" method="POST" action="/process">
-        <input type="hidden" name="source_folder" id="source_folder">
-        <label for="threshold">Threshold:</label>
-        <input type="text" name="threshold" id="threshold" value="100">
-        <button type="submit">Process Images</button>
-    </form>
+    <div class="container">
+        <h1>File Browser</h1>
+        <div id="file-browser" class="file-browser"></div>
+        <div class="actions">
+            <button type="button" id="select-folder-btn">Select This Folder</button>
+        </div>
+        <form id="process-form" method="POST" action="/process" class="form-section">
+            <div>
+                <label for="threshold">Threshold:</label>
+                <input type="text" name="threshold" id="threshold" value="100">
+            </div>
+            <br><br>
+            <button type="submit">Process Images</button>
+        </form>
+    </div>
 
     <script>
         const socket = io();
@@ -66,18 +96,15 @@
                 };
                 fileBrowser.appendChild(fileElement);
             });
-
-            const selectFolderButton = document.createElement('button');
-            selectFolderButton.textContent = 'Select This Folder';
-            selectFolderButton.onclick = () => {
-                document.getElementById('source_folder').value = data.path;
-            };
-            fileBrowser.appendChild(selectFolderButton);
         });
 
         socket.on('error', data => {
             alert(data.message);
         });
+
+        document.getElementById('select-folder-btn').onclick = () => {
+            document.getElementById('source_folder').value = currentPath;
+        };
 
         // Start browsing from /app/images
         browse('/app/images');
