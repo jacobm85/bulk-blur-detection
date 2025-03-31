@@ -56,6 +56,12 @@
         .back-button:hover {
             background-color: #e53935;
         }
+        .selected {
+            background-color: #2196F3;
+        }
+        .selected:hover {
+            background-color: #1E88E5;
+        }
     </style>
 </head>
 <body>
@@ -64,7 +70,7 @@
         <h2>Select Folder</h2>
         <div id="file-browser" class="file-browser"></div>
         <div class="actions">
-            <button type="button" id="select-folder-btn">Select This Folder</button>
+            <button type="button" id="select-folder-btn" onclick="selectFolder()">Select This Folder</button>
         </div>
         <form id="process-form" method="POST" action="/process" class="form-section">
             <input type="hidden" name="source_folder" id="source_folder">
@@ -81,9 +87,12 @@
     <script>
         const socket = io();
         let currentPath = '/app/images';
+        let folderSelected = false;
 
         function browse(path) {
             currentPath = path;
+            folderSelected = false;
+            document.getElementById('select-folder-btn').classList.remove('selected');
             socket.emit('browse', {path: path});
         }
 
@@ -92,6 +101,12 @@
             pathSegments.pop();
             const newPath = pathSegments.join('/');
             browse(newPath || '/app/images');
+        }
+
+        function selectFolder() {
+            document.getElementById('source_folder').value = currentPath;
+            document.getElementById('select-folder-btn').classList.add('selected');
+            folderSelected = true;
         }
 
         socket.on('files', data => {
@@ -110,8 +125,6 @@
                 fileElement.onclick = () => {
                     if (file.is_dir) {
                         browse(data.path + '/' + file.name);
-                    } else {
-                        document.getElementById('source_folder').value = data.path + '/' + file.name;
                     }
                 };
                 fileBrowser.appendChild(fileElement);
@@ -127,10 +140,6 @@
         socket.on('error', data => {
             alert(data.message);
         });
-
-        document.getElementById('select-folder-btn').onclick = () => {
-            document.getElementById('source_folder').value = currentPath;
-        };
 
         // Start browsing from /app/images
         browse('/app/images');
