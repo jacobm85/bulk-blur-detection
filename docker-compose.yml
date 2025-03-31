@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  blur_detector:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./input:/app/input  # Mount the input folder
+      - ./output:/app/output  # Mount the output folder
+    environment:
+      - THRESHOLD=80  # Default threshold; can be overridden
