@@ -3,20 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Blur Detection</title>
+    <title>Bulk Blur Detection</title>
 </head>
 <body>
-    <h1>Blur Detection Tool</h1>
-    <form action="/process" method="post">
-        <label for="inputFolder">Input Folder:</label>
-        <input type="text" id="inputFolder" name="inputFolder" required>
-        <br>
-        <label for="outputFolder">Output Folder:</label>
-        <input type="text" id="outputFolder" name="outputFolder" required>
-        <br>
+    <h1>Bulk Blur Detection</h1>
+    <form action="{{ url_for('process_images') }}" method="POST">
+        <label for="source_folder">Source Folder:</label>
+        <input type="text" id="source_folder" name="source_folder" required><br><br>
+
         <label for="threshold">Blurry Threshold:</label>
-        <input type="number" id="threshold" name="threshold" required>
-        <br>
+        <input type="text" id="threshold" name="threshold" required><br><br>
+
         <button type="submit">Process</button>
     </form>
 </body>
