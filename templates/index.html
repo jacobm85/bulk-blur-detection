@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>File Browser</title>
+    <title>Blur detector</title>
     <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
     <style>
         .directory {
@@ -20,15 +20,24 @@
     <form id="process-form" method="POST" action="/process">
         <input type="hidden" name="source_folder" id="source_folder">
         <label for="threshold">Threshold:</label>
-        <input type="text" name="threshold" id="threshold">
+        <input type="text" name="threshold" id="threshold" value="100">
         <button type="submit">Process Images</button>
     </form>
 
     <script>
         const socket = io();
+        let currentPath = '/app/images';
 
         function browse(path) {
+            currentPath = path;
             socket.emit('browse', {path: path});
+        }
+
+        function goBack() {
+            const pathSegments = currentPath.split('/');
+            pathSegments.pop();
+            const newPath = pathSegments.join('/');
+            browse(newPath || '/app/images');
         }
 
         socket.on('files', data => {
@@ -38,6 +47,11 @@
             const path = document.createElement('p');
             path.textContent = `Path: ${data.path}`;
             fileBrowser.appendChild(path);
+
+            const backButton = document.createElement('button');
+            backButton.textContent = 'Back';
+            backButton.onclick = goBack;
+            fileBrowser.appendChild(backButton);
 
             data.files.forEach(file => {
                 const fileElement = document.createElement('div');
