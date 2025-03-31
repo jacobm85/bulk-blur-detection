@@ -15,14 +15,17 @@ RUN git clone https://github.com/jacobm85/bulk-blur-detection.git .
 # Install any needed packages specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the index.html file (you need to create this file in your repo)
+# Copy the index.html file
 COPY index.html /app/index.html
 
-# Copy the web app code (you will need to create this file)
+# Copy the web app code
 COPY app.py /app/app.py
+
+# Copy the detector code
+COPY blur_detector.py /app/blur_detector.py
 
 # Expose the port the app runs on
 EXPOSE 5000
 
 # Command to run the application
-CMD ["python", "app.py"]  # Assume you have an app.py to run your web interface
+CMD ["python3", "app.py"]  # Assume you have an app.py to run your web interface
