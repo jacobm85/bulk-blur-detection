@@ -48,6 +48,7 @@
             <button type="button" id="select-folder-btn">Select This Folder</button>
         </div>
         <form id="process-form" method="POST" action="/process" class="form-section">
+            <input type="hidden" name="source_folder" id="source_folder">
             <div>
                 <label for="threshold">Threshold for blurriness (100 default):</label>
                 <input type="text" name="threshold" id="threshold" value="100">
