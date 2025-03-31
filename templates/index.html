@@ -4,17 +4,32 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bulk Blur Detection</title>
+    <style>
+        /* Simple styling for the folder input */
+        #folder_input {
+            display: none; /* Hide the input */
+        }
+    </style>
 </head>
 <body>
     <h1>Bulk Blur Detection</h1>
-    <form action="{{ url_for('process_images') }}" method="POST">
+    <form action="{{ url_for('process_images') }}" method="POST" id="folder_form">
         <label for="source_folder">Source Folder:</label>
-        <input type="text" id="source_folder" name="source_folder" required><br><br>
-
-        <label for="threshold">Blurry Threshold:</label>
-        <input type="text" id="threshold" name="threshold" required><br><br>
-
-        <button type="submit">Process</button>
+        <input type="text" id="source_folder" name="source_folder" required readonly>
+        <button type="button" id="browse_button">Browse...</button><br><br>
+        <input type="file" id="folder_input" webkitdirectory directory multiple>
+        <input type="submit" value="Submit">
     </form>
+
+    <script>
+        document.getElementById('browse_button').addEventListener('click', function() {
+            document.getElementById('folder_input').click(); // Trigger the file input
+        });
+
+        document.getElementById('folder_input').addEventListener('change', function(event) {
+            const folderPath = event.target.files[0].webkitRelativePath.split('/')[0]; // Get the folder name
+            document.getElementById('source_folder').value = folderPath; // Set the folder name in the text input
+        });
+    </script>
 </body>
 </html>
