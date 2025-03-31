@@ -50,8 +50,9 @@
         <form id="process-form" method="POST" action="/process" class="form-section">
             <input type="hidden" name="source_folder" id="source_folder">
             <div>
-                <label for="threshold">Threshold for blurriness (100 default):</label>
-                <input type="text" name="threshold" id="threshold" value="100">
+                <p>Higher threshold = more images. 19 is clearly blurry photos. 100+ is more prone to false positives due to motion blur or parts being out of focus.</p>
+                <label for="threshold">Threshold for blurriness (19 default):</label>
+                <input type="text" name="threshold" id="threshold" value="19">
             </div>
             <br><br>
             <button type="submit">Process Images in Folder</button>
