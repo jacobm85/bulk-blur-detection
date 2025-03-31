@@ -20,7 +20,7 @@ threshold = args["threshold"]
 # loop over the input images
 for imageName in os.listdir(imageDir):
   # If the current path is not an image, skip this iteration
-  if imageName[-3:] != "jpg" and imageName[-3:] != "png":
+  if not (imageName.lower().endswith("jpg") or imageName.lower().endswith("png")):
     continue
 
   # Initialize paths for I/O
