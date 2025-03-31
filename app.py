@@ -9,7 +9,10 @@ BLUR_DETECTOR_SCRIPT = '/app/blur_detector.py'
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    # List the directories in the specified path
+    base_path = '/'
+    directories = os.listdir(base_path)
+    return render_template('index.html', directories=directories)
 
 @app.route('/process', methods=['POST'])
 def process_images():
