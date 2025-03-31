@@ -4,6 +4,15 @@
     <meta charset="UTF-8">
     <title>File Browser</title>
     <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+    <style>
+        .directory {
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .file {
+            cursor: pointer;
+        }
+    </style>
 </head>
 <body>
     <h1>File Browser</h1>
@@ -33,14 +42,23 @@
             data.files.forEach(file => {
                 const fileElement = document.createElement('div');
                 fileElement.textContent = file.name;
-                if (file.is_dir) {
-                    fileElement.style.fontWeight = 'bold';
-                    fileElement.onclick = () => browse(data.path + '/' + file.name);
-                } else {
-                    fileElement.onclick = () => document.getElementById('source_folder').value = data.path + '/' + file.name;
-                }
+                fileElement.className = file.is_dir ? 'directory' : 'file';
+                fileElement.onclick = () => {
+                    if (file.is_dir) {
+                        browse(data.path + '/' + file.name);
+                    } else {
+                        document.getElementById('source_folder').value = data.path;
+                    }
+                };
                 fileBrowser.appendChild(fileElement);
             });
+
+            const selectFolderButton = document.createElement('button');
+            selectFolderButton.textContent = 'Select This Folder';
+            selectFolderButton.onclick = () => {
+                document.getElementById('source_folder').value = data.path;
+            };
+            fileBrowser.appendChild(selectFolderButton);
         });
 
         socket.on('error', data => {
