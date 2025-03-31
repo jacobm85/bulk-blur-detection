@@ -2,28 +2,52 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Directory Browser</title>
+    <title>File Browser</title>
+    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
 </head>
 <body>
-    <h1>Directory Browser</h1>
-    <h2>Current Path: {{ current_path }}</h2>
-
-    <form method="POST" action="/browse">
-        <select name="folder">
-            <option value="">Select a folder</option>
-            {% for directory in directories %}
-                <option value="{{ directory }}">{{ directory }}</option>
-            {% endfor %}
-        </select>
-        <input type="submit" value="Browse">
+    <h1>File Browser</h1>
+    <div id="file-browser"></div>
+    <form id="process-form" method="POST" action="/process">
+        <input type="hidden" name="source_folder" id="source_folder">
+        <label for="threshold">Threshold:</label>
+        <input type="text" name="threshold" id="threshold">
+        <button type="submit">Process Images</button>
     </form>
 
-    <h3>Files:</h3>
-    <ul>
-        {% for file in files %}
-            <li>{{ file }}</li>
-        {% endfor %}
-    </ul>
+    <script>
+        const socket = io();
+
+        function browse(path) {
+            socket.emit('browse', {path: path});
+        }
+
+        socket.on('files', data => {
+            const fileBrowser = document.getElementById('file-browser');
+            fileBrowser.innerHTML = '';
+
+            const path = document.createElement('p');
+            path.textContent = `Path: ${data.path}`;
+            fileBrowser.appendChild(path);
+
+            data.files.forEach(file => {
+                const fileElement = document.createElement('div');
+                fileElement.textContent = file.name;
+                if (file.is_dir) {
+                    fileElement.style.fontWeight = 'bold';
+                    fileElement.onclick = () => browse(data.path + '/' + file.name);
+                } else {
+                    fileElement.onclick = () => document.getElementById('source_folder').value = data.path + '/' + file.name;
+                }
+                fileBrowser.appendChild(fileElement);
+            });
+        });
+
+        socket.on('error', data => {
+            alert(data.message);
+        });
+
+        browse('/');
+    </script>
 </body>
 </html>
