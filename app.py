@@ -6,21 +6,27 @@ app = Flask(__name__)
 
 # The path to the blur detection script (from GitHub repo)
 BLUR_DETECTOR_SCRIPT = '/app/blur_detector.py'
+# Set the directory you want to browse
+BASE_DIR = '/'  # Change this to your desired path
 
-@app.route('/browse/<path:folder_path>')
-def browse(folder_path):
-    try:
-        items = os.listdir(folder_path)
-        return jsonify(items)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/')
+@app.route('/', methods=['GET', 'POST'])
 def index():
-    # List the directories in the specified path
-    base_path = '/mnt' #spec start folder to list.
-    directories = os.listdir(base_path)
-    return render_template('index.html', directories=directories)
+    current_path = request.args.get('path', BASE_DIR)
+    
+    if not os.path.exists(current_path):
+        return "Directory does not exist", 404
+    
+    # List directories and files
+    items = os.listdir(current_path)
+    directories = [item for item in items if os.path.isdir(os.path.join(current_path, item))]
+    files = [item for item in items if os.path.isfile(os.path.join(current_path, item))]
+
+    return render_template('index.html', directories=directories, files=files, current_path=current_path)
+
+@app.route('/browse', methods=['POST'])
+def browse():
+    folder = request.form.get('folder')
+    return index(path=os.path.join(request.args.get('path', BASE_DIR), folder))
 
 @app.route('/process', methods=['POST'])
 def process_images():
