@@ -16,7 +16,7 @@ def index():
 
 @socketio.on('browse')
 def browse(data):
-    path = data.get('path', BASE_DIR)
+    path = os.path.join(BASE_DIR, data.get('path', ''))
     if not os.path.exists(path):
         emit('error', {'message': 'Directory does not exist!'})
         return
@@ -38,7 +38,12 @@ def process_images():
 
     # Run the blur detector script with user parameters
     command = ['python', BLUR_DETECTOR_SCRIPT, '-i', source_folder, '-t', threshold]
-    subprocess.run(command, check=True)
+    try:
+        result = subprocess.run(command, check=True, capture_output=True, text=True)
+        print(result.stdout)  # Optionally log the output for debugging
+    except subprocess.CalledProcessError as e:
+        print(f"Error: {e.stderr}")  # Log the error message
+        return f"An error occurred while processing images: {e.stderr}", 500
 
     return redirect(url_for('index'))
 
