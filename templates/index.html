@@ -3,18 +3,43 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bulk Blur Detection</title>
+    <title>Directory Browser</title>
 </head>
 <body>
-    <h1>Bulk Blur Detection</h1>
-    <form action="{{ url_for('process_images') }}" method="POST">
-        <label for="source_folder">Source Folder:</label>
-        <select id="source_folder" name="source_folder" required>
-            {% for directory in directories %}
-                <option value="{{ directory }}">{{ directory }}</option>
-            {% endfor %}
-        </select><br><br>
-        <input type="submit" value="Process Images">
-    </form>
+    <div id="file-explorer"></div>
+
+    <script>
+        const baseFolder = '/path/to/your/container'; // Base folder path
+
+        function fetchDirectory(folderPath) {
+            fetch(`/browse/${folderPath}`)
+                .then(response => response.json())
+                .then(data => {
+                    displayItems(data, folderPath);
+                })
+                .catch(error => console.error('Error fetching directory:', error));
+        }
+
+        function displayItems(items, folderPath) {
+            const explorer = document.getElementById('file-explorer');
+            explorer.innerHTML = ''; // Clear previous items
+
+            items.forEach(item => {
+                const itemDiv = document.createElement('div');
+                itemDiv.textContent = item;
+                itemDiv.style.cursor = 'pointer';
+
+                // Check if item is a directory (you may need to implement additional logic to check)
+                itemDiv.onclick = () => {
+                    fetchDirectory(`${folderPath}/${item}`);
+                };
+
+                explorer.appendChild(itemDiv);
+            });
+        }
+
+        // Initial fetch
+        fetchDirectory(baseFolder);
+    </script>
 </body>
 </html>
