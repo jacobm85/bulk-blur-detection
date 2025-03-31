@@ -7,6 +7,6 @@ services:
     volumes:
       - /mnt:/app/images  # Mount a local folder for images (optional)
     ports:
-      - "5050:5000"  # Expose the web app on port 5000
+      - "5050:5000"  # Expose the web app on port 5050
     environment:
       - FLASK_ENV=development
