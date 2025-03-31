@@ -18,6 +18,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the index.html file (you need to create this file in your repo)
 COPY index.html /app/index.html
 
+# Copy the web app code (you will need to create this file)
+COPY app.py /app/app.py
+
 # Expose the port the app runs on
 EXPOSE 5000
 
