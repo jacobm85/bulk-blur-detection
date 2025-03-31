@@ -5,7 +5,7 @@ services:
     build: .
     container_name: bulk-blur-detection
     volumes:
-      - /mnt/path/to/images:/app/images  # Mount a local folder for images (optional)
+      - /mnt:/app/images  # Mount a local folder for images (optional)
     ports:
       - "5000:5000"  # Expose the web app on port 5000
     environment:
