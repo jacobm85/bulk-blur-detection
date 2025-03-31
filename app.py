@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, jsonify, send_from_directory, render_template, request, redirect, url_for
 import subprocess
 import os
 
@@ -7,10 +7,18 @@ app = Flask(__name__)
 # The path to the blur detection script (from GitHub repo)
 BLUR_DETECTOR_SCRIPT = '/app/blur_detector.py'
 
+@app.route('/browse/<path:folder_path>')
+def browse(folder_path):
+    try:
+        items = os.listdir(folder_path)
+        return jsonify(items)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/')
 def index():
     # List the directories in the specified path
-    base_path = '/'
+    base_path = '/mnt' #spec start folder to list.
     directories = os.listdir(base_path)
     return render_template('index.html', directories=directories)
 
