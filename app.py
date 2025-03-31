@@ -8,7 +8,7 @@ app = Flask(__name__)
 socketio = SocketIO(app, async_mode='eventlet')
 
 BLUR_DETECTOR_SCRIPT = '/app/blur_detector.py'
-BASE_DIR = '/app/images/'  # Change this to your desired path
+BASE_DIR = '/'  # Change this to your desired path
 
 @app.route('/')
 def index():
