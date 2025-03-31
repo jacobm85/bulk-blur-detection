@@ -1,4 +1,4 @@
-Docker version ofhttps://github.com/danngalann/bulk-blur-detection with a simple html interface.
+Docker version of https://github.com/danngalann/bulk-blur-detection with a simple html interface.
 Specify path where photos are stored in the compose file. Can also optionally specify a threshold value that determines "how much" blurryness is considered "blurry".
 
 
