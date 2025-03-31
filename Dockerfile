@@ -5,17 +5,22 @@ FROM python:3.9-slim
 WORKDIR /app
 
 # Copy the requirements file from the GitHub repository
-RUN apt-get update && apt-get install -y \
+# Install necessary dependencies for OpenCV and Git
+RUN apt-get update && \
+    apt-get install -y \
     git \
     libgl1-mesa-glx \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
     libxrender1 && \
-    && rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/*
 
 # Clone the repository
 RUN git clone https://github.com/jacobm85/bulk-blur-detection.git .
+
+# Copy all files into the container
+# COPY . /app
 
 # Install any needed packages specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
