@@ -6,40 +6,24 @@
     <title>Directory Browser</title>
 </head>
 <body>
-    <div id="file-explorer"></div>
+    <h1>Directory Browser</h1>
+    <h2>Current Path: {{ current_path }}</h2>
 
-    <script>
-        const baseFolder = '/'; // Base folder path
+    <form method="POST" action="/browse">
+        <select name="folder">
+            <option value="">Select a folder</option>
+            {% for directory in directories %}
+                <option value="{{ directory }}">{{ directory }}</option>
+            {% endfor %}
+        </select>
+        <input type="submit" value="Browse">
+    </form>
 
-        function fetchDirectory(folderPath) {
-            fetch(`/browse/${folderPath}`)
-                .then(response => response.json())
-                .then(data => {
-                    displayItems(data, folderPath);
-                })
-                .catch(error => console.error('Error fetching directory:', error));
-        }
-
-        function displayItems(items, folderPath) {
-            const explorer = document.getElementById('file-explorer');
-            explorer.innerHTML = ''; // Clear previous items
-
-            items.forEach(item => {
-                const itemDiv = document.createElement('div');
-                itemDiv.textContent = item;
-                itemDiv.style.cursor = 'pointer';
-
-                // Check if item is a directory (you may need to implement additional logic to check)
-                itemDiv.onclick = () => {
-                    fetchDirectory(`${folderPath}/${item}`);
-                };
-
-                explorer.appendChild(itemDiv);
-            });
-        }
-
-        // Initial fetch
-        fetchDirectory(baseFolder);
-    </script>
+    <h3>Files:</h3>
+    <ul>
+        {% for file in files %}
+            <li>{{ file }}</li>
+        {% endfor %}
+    </ul>
 </body>
 </html>
