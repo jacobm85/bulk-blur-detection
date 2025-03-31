@@ -45,7 +45,7 @@
                 fileElement.className = file.is_dir ? 'directory' : 'file';
                 fileElement.onclick = () => {
                     if (file.is_dir) {
-                        browse(data.path + '/' + file.name);
+                        browse(os.path.join(data.path, file.name));
                     } else {
                         document.getElementById('source_folder').value = data.path;
                     }
