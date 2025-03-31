@@ -9,24 +9,19 @@ BLUR_DETECTOR_SCRIPT = '/app/blur_detector.py'
 # Set the directory you want to browse
 BASE_DIR = '/'  # Change this to your desired path
 
-@app.route('/', methods=['GET', 'POST'])
+@app.route('/')
 def index():
-    current_path = request.args.get('path', BASE_DIR)
-    
-    if not os.path.exists(current_path):
-        return "Directory does not exist", 404
-    
-    # List directories and files
-    items = os.listdir(current_path)
-    directories = [item for item in items if os.path.isdir(os.path.join(current_path, item))]
-    files = [item for item in items if os.path.isfile(os.path.join(current_path, item))]
+    return browse()
 
-    return render_template('index.html', directories=directories, files=files, current_path=current_path)
-
-@app.route('/browse', methods=['POST'])
+@app.route('/browse', methods=['GET'])
 def browse():
-    folder = request.form.get('folder')
-    return index(path=os.path.join(request.args.get('path', BASE_DIR), folder))
+    path = request.args.get('path', BASE_DIR)
+    if not os.path.exists(path):
+        return "Directory does not exist!", 404
+
+    files = os.listdir(path)
+    return render_template('browse.html', files=files, path=path)
+    
 
 @app.route('/process', methods=['POST'])
 def process_images():
