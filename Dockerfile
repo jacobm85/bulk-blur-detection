@@ -28,7 +28,6 @@ RUN pip install flask flask-socketio eventlet
 
 # Copy the index.html file
 COPY templates/index.html /app/templates/index.html
-COPY templates/browse.html /app/templates/browse.html
 
 # Copy the web app code
 COPY app.py /app/app.py
