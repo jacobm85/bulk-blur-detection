@@ -1,4 +1,4 @@
-e<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -38,11 +38,29 @@ e<!DOCTYPE html>
         .current-path {
             font-style: italic;
         }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .back-button {
+            background-color: #f44336;
+        }
+        .back-button:hover {
+            background-color: #e53935;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Blur detector</h1>
+        <h1>Blur Detector</h1>
         <h2>Select Folder</h2>
         <div id="file-browser" class="file-browser"></div>
         <div class="actions">
@@ -101,6 +119,7 @@ e<!DOCTYPE html>
 
             const backButton = document.createElement('button');
             backButton.textContent = 'Back';
+            backButton.className = 'back-button';
             backButton.onclick = goBack;
             fileBrowser.appendChild(backButton);
         });
