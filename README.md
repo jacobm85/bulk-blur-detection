@@ -1,3 +1,10 @@
+Docker version ofhttps://github.com/danngalann/bulk-blur-detection with a simple html interface.
+Specify path where photos are stored in the compose file. Can also optionally specify a threshold value that determines "how much" blurryness is considered "blurry".
+
+
+
+
+
 # Bulk Blur Detector
 This script is based on a project from [pyimagesearch](https://www.pyimagesearch.com). It will process a directory of pictures and autonomously move the blurry ones to a different folder.
 
