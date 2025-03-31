@@ -1,27 +1,28 @@
 from flask import Flask, jsonify, send_from_directory, render_template, request, redirect, url_for
 import subprocess
 import os
+from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
+socketio = SocketIO(app)
 
-# The path to the blur detection script (from GitHub repo)
 BLUR_DETECTOR_SCRIPT = '/app/blur_detector.py'
-# Set the directory you want to browse
 BASE_DIR = '/'  # Change this to your desired path
 
 @app.route('/')
 def index():
-    return browse()
+    return render_template('index.html')
 
-@app.route('/browse', methods=['GET'])
-def browse():
-    path = request.args.get('path', BASE_DIR)
+@socketio.on('browse')
+def browse(data):
+    path = data.get('path', BASE_DIR)
     if not os.path.exists(path):
-        return "Directory does not exist!", 404
+        emit('error', {'message': 'Directory does not exist!'})
+        return
 
     files = os.listdir(path)
-    return render_template('browse.html', files=files, path=path)
-    
+    directories = [{'name': f, 'is_dir': os.path.isdir(os.path.join(path, f))} for f in files]
+    emit('files', {'path': path, 'files': directories})
 
 @app.route('/process', methods=['POST'])
 def process_images():
@@ -41,4 +42,4 @@ def process_images():
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
