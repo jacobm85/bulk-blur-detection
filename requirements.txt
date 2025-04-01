@@ -2,3 +2,5 @@ Flask
 Flask-SocketIO
 opencv-python
 eventlet
+torch
+opencv-python
