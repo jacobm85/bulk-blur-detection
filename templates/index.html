@@ -20,12 +20,10 @@
             margin-bottom: 20px;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
         }
-        .directory, .file {
+        .directory {
             margin: 5px 0;
             padding: 5px;
             cursor: pointer;
-        }
-        .directory {
             font-weight: bold;
         }
         .actions {
@@ -86,17 +84,18 @@
         <div class="actions">
             <button type="button" id="select-folder-btn" onclick="selectFolder()">Select This Folder</button>
         </div>
-        <form id="process-form" method="POST" action="/process" class="form-section" onsubmit="showSpinner(event)">
-            <input type="hidden" name="source_folder" id="source_folder">
+        <form id="process-form" method="POST" action="/process" class="form-section" onsubmit="showSpinner()">
+            <input type="hidden" name="source_folder" id="source_folder"> <!-- Hidden input to pass the selected folder -->
             <div>
                 <p>Higher threshold = more images. 19 is clearly blurry photos. 100+ is more prone to false positives due to motion blur or parts being out of focus.</p>
                 <label for="threshold">Threshold for blurriness (19 default):</label>
                 <input type="text" name="threshold" id="threshold" value="19">
             </div>
             <br><br>
-            <label>
-                <input type="checkbox" name="model_based" id="model_based"> Perform Model-Based Classification
-            </label>
+            <div>
+                <label for="modelbased">Use Model-based Classification?</label>
+                <input type="checkbox" name="modelbased" id="modelbased">
+            </div>
             <br><br>
             <button type="submit">Process Images in Folder</button>
             <div id="spinner" class="spinner"></div>
@@ -105,81 +104,78 @@
 
     <script>
         const socket = io();
-        let currentPath = '/app/images';  // Default starting path
+        let currentPath = '/app/images';  // Default start path
         let folderSelected = false;
 
-        // Browse function to load files and directories
+        // Browsing function
         function browse(path) {
-            currentPath = path;
-            folderSelected = false;
+            currentPath = path;  // Update the current path
+            folderSelected = false;  // Reset folder selected status
             document.getElementById('select-folder-btn').classList.remove('selected');
-            socket.emit('browse', { path: path });
+            socket.emit('browse', { path: path });  // Emit to browse new path
         }
 
-        // Go back one folder
+        // Go back to the parent directory
         function goBack() {
             const pathSegments = currentPath.split('/');
-            pathSegments.pop();
+            pathSegments.pop();  // Remove the last directory segment
             const newPath = pathSegments.join('/');
             browse(newPath || '/app/images');
         }
 
-        // Set the folder to the selected folder
+        // Select the current folder
         function selectFolder() {
-            if (!folderSelected) {
-                alert("Please select a folder first!");
-                return;
+            if (currentPath !== '') {  // Check if there's a valid path
+                document.getElementById('source_folder').value = currentPath;  // Set the form input to the current path
+                document.getElementById('select-folder-btn').classList.add('selected');
+                folderSelected = true;  // Mark folder as selected
+            } else {
+                alert('Please browse to a valid folder first.');
             }
-
-            document.getElementById('source_folder').value = currentPath;
-            document.getElementById('select-folder-btn').classList.add('selected');
         }
 
-        // Show the spinner when processing
-        function showSpinner(event) {
-            event.preventDefault();  // Prevent form submission to show spinner
+        // Show the loading spinner during processing
+        function showSpinner() {
             document.querySelector('button[type="submit"]').textContent = 'Processing...';
             document.getElementById('spinner').style.display = 'block';
-            document.getElementById('process-form').submit();
         }
 
-        // Socket listener for loading files
+        // Listen for the folder list
         socket.on('files', data => {
             const fileBrowser = document.getElementById('file-browser');
-            fileBrowser.innerHTML = '';  // Clear existing files
+            fileBrowser.innerHTML = '';  // Clear previous file browser contents
 
             const path = document.createElement('p');
             path.className = 'current-path';
             path.textContent = `Current path: ${data.path}`;
             fileBrowser.appendChild(path);
 
-            // Display directories and files
+            // Display directories only
             data.files.forEach(file => {
-                const fileElement = document.createElement('div');
-                fileElement.textContent = file.name;
-                fileElement.className = file.is_dir ? 'directory' : 'file';
-                fileElement.onclick = () => {
-                    if (file.is_dir) {
-                        browse(data.path + '/' + file.name);  // Go to folder
-                    }
-                };
-                fileBrowser.appendChild(fileElement);
+                if (file.is_dir) {  // Only show directories
+                    const fileElement = document.createElement('div');
+                    fileElement.textContent = file.name;
+                    fileElement.className = 'directory';
+                    fileElement.onclick = () => {
+                        browse(data.path + '/' + file.name);  // Update current path and browse into subdirectory
+                    };
+                    fileBrowser.appendChild(fileElement);
+                }
             });
 
-            // Back button for navigation
+            // Back button to go to parent directory
             const backButton = document.createElement('button');
             backButton.textContent = 'Back';
             backButton.className = 'back-button';
-            backButton.onclick = goBack;
+            backButton.onclick = goBack;  // Go back one level
             fileBrowser.appendChild(backButton);
         });
 
-        // Handle error messages
         socket.on('error', data => {
             alert(data.message);
         });
 
-        // Start browsing from /app/images
+        // Start browsing from the default folder
         browse('/app/images');
     </script>
 </body>
