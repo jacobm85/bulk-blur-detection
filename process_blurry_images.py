@@ -7,6 +7,9 @@ import argparse
 from utils.feature_extractor import featureExtractor
 from utils.data_loader import TestDataset
 from torch.utils.data import Dataset, DataLoader
+from torch.serialization import add_safe_globals
+from torch.nn import Linear  # Example of custom layer (update based on your model's custom layers)
+
 
 # Add the MLP class to the safe globals (make sure you import MLP if it's not already imported)
 from utils.MLP import MLP
@@ -109,8 +112,11 @@ def process_images(input_folder, threshold, model_path=None, modelbased=False):
     
     # Step 2: If model-based classification is enabled, classify using the PyTorch model
     #if modelbased:
-        trained_model = torch.load(model_path)
-        trained_model = trained_model['model_state']
+        # Add safe globals for custom classes
+        add_safe_globals([Linear])  # Replace Linear with any custom class used in your model
+        
+        trained_model = torch.load(model_path, weights_only=False)
+        trained_model = trained_model['model_state'] if isinstance(trained_model, dict) else trained_model
         
         run_testing_on_dataset(trained_model, input_folder, GT_blurry=True)
 
