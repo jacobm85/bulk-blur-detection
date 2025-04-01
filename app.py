@@ -30,7 +30,7 @@ def browse(data):
 def process_images():
     source_folder = request.form['source_folder']
     threshold = request.form['threshold']
-    model_based = request.form.get('modelbased', False)
+    model_based = request.form.get('model_based') == 'on'  # True if checked, False otherwise
 
     # Debugging log: print the received source folder
     print(f"Received source folder: {source_folder}")
@@ -48,32 +48,18 @@ def process_images():
         BLUR_DETECTOR_SCRIPT, 
         '-i', source_folder,          # input folder containing images to process
         '-t', str(threshold),         # threshold for Laplacian blurriness detection
-        '-m', '/app/model/trained_model-Kaggle_dataset'  # Correct path to the pre-trained model
+        '-m', '/app/model/trained_model-Kaggle_dataset',  # Correct path to the model for classification
     ]
 
+    if model_based:
+        command.append('-mb')  # Add the '-mb' flag if model-based classification is enabled
+    
     try:
         result = subprocess.run(command, check=True, capture_output=True, text=True)
-        print(result.stdout)  # Optionally log the output for debugging
+        print(result.stdout)  # Log the output from the model-based classification process
     except subprocess.CalledProcessError as e:
-        print(f"Error: {e.stderr}")  # Log the error message
-        return f"An error occurred while processing images: {e.stderr}", 500
-
-    # If model-based classification is selected, run that as well
-    if model_based:
-        model_command = [
-            'python', 
-            BLUR_DETECTOR_SCRIPT, 
-            '-i', source_folder, 
-            '-t', str(threshold),
-            '-mb', model_based,
-            '-m', '/app/model/trained_model-Kaggle_dataset',  # Correct path to the model for classification
-        ]
-        try:
-            result = subprocess.run(model_command, check=True, capture_output=True, text=True)
-            print(result.stdout)
-        except subprocess.CalledProcessError as e:
-            print(f"Model classification error: {e.stderr}")
-            return f"Error in model classification: {e.stderr}", 500
+        print(f"Model classification error: {e.stderr}")
+        return f"Error in model classification: {e.stderr}", 500
 
     return redirect(url_for('index'))
 
