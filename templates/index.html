@@ -91,7 +91,7 @@
 
         <div class="form-section">
             <h2>Process Images</h2>
-            <form method="POST" action="/process">
+            <form id="processForm" method="POST" action="/process">
                 <label for="source_folder">Select Source Folder:</label>
                 <input type="text" name="source_folder" id="source_folder" readonly value="/app/images" style="width: 80%"><br><br>
 
@@ -115,7 +115,37 @@
     <script>
         var socket = io();
 
+        // Function to update the selected folder input field
+        function updateFolderInput(path) {
+            // Set the value of the input field to the selected path
+            document.getElementById("source_folder").value = path;
+        }
+
         // Implement your browse functionality here
+        socket.on('files', function(data) {
+            // Update the file/folder list UI based on the directory received
+            const fileList = document.getElementById("fileList");
+            fileList.innerHTML = '';
+
+            data.files.forEach(function(item) {
+                const fileItem = document.createElement('div');
+                fileItem.classList.add(item.is_dir ? 'directory' : 'file');
+                fileItem.textContent = item.name;
+
+                fileItem.addEventListener('click', function() {
+                    // When a folder is clicked, update the folder input
+                    if (item.is_dir) {
+                        updateFolderInput(item.name);  // Update input with folder name
+                    }
+                });
+
+                fileList.appendChild(fileItem);
+            });
+        });
+
+        // Initial connection to the socket to fetch files and directories
+        socket.emit('browse', { path: '/app/images' });
+
     </script>
 
 </body>
