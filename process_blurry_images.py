@@ -1,90 +1,101 @@
 import os
-import argparse
+import torch
 import cv2
-from tensorflow.keras.models import load_model
+import numpy as np
+from utils.feature_extractor import featureExtractor
+from utils.data_loader import TestDataset
+from torch.utils.data import DataLoader
+import argparse
 
-def detect_blurry_images(input_folder, threshold=100.0):  # Default threshold is 100.0
-    blurry_folder = os.path.join(input_folder, "Blurry")  # The "Blurry" folder in the input directory
 
-    if not os.path.exists(blurry_folder):
-        os.mkdir(blurry_folder)
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # Process all images in the input folder
-    for image_name in os.listdir(input_folder):
-        image_path = os.path.join(input_folder, image_name)
-        if os.path.isfile(image_path) and image_name.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
-            # Read the image
-            image = cv2.imread(image_path)
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-            # Compute the Laplacian of the image to check blurriness
-            fm = cv2.Laplacian(gray, cv2.CV_64F).var()
+def run_testing_on_dataset(trained_model, dataset_dir, GT_blurry):
+    correct_prediction_count = 0
+    img_list = os.listdir(dataset_dir)
+    for ind, image_name in enumerate(img_list):
+        print("Blurry Image Prediction: %d / %d images processed.." % (ind, len(img_list)))
 
-            # If the focus measure is below the threshold, consider the image blurry
-            if fm < threshold:
-                print(f"{image_name} is blurry.")
-                # Move the blurry image to the "Blurry" folder
-                cv2.imwrite(os.path.join(blurry_folder, image_name), image)
-                os.remove(image_path)  # Remove the original image from the input folder
+        # Read the image
+        img = cv2.imread(os.path.join(dataset_dir, image_name), 0)
+
+        prediction = is_image_blurry(trained_model, img, threshold=0.5)
+
+        if(prediction == GT_blurry):
+            correct_prediction_count += 1
+    accuracy = correct_prediction_count / len(img_list)
+    return accuracy
+
+
+def is_image_blurry(trained_model, img, threshold=0.5):
+    feature_extractor = featureExtractor()
+    accumulator = []
+
+    # Resize the image by the downsampling factor
+    feature_extractor.resize_image(img, np.shape(img)[0], np.shape(img)[1])
+
+    # compute the image ROI using local entropy filter
+    feature_extractor.compute_roi()
+
+    # extract the blur features using DCT transform coefficients
+    extracted_features = feature_extractor.extract_feature()
+    extracted_features = np.array(extracted_features)
+
+    if len(extracted_features) == 0:
+        return True
+    test_data_loader = DataLoader(TestDataset(extracted_features), batch_size=1, shuffle=False)
+
+    # Run the model on the input data
+    for batch_num, input_data in enumerate(test_data_loader):
+        x = input_data
+        x = x.to(device).float()
+
+        output = trained_model(x)
+        _, predicted_label = torch.max(output, 1)
+        accumulator.append(predicted_label.item())
+
+    prediction = np.mean(accumulator) < threshold
+    return prediction
+
 
 def model_based_classification(input_folder, model_path):
-    blurry_folder = os.path.join(input_folder, "Blurry")  # Get the "Blurry" folder path
+    blurry_folder = os.path.join(input_folder, "Blurry")
 
-    if not os.path.exists(blurry_folder):
-        os.mkdir(blurry_folder)
+    # Load the trained PyTorch model
+    trained_model = torch.load(model_path)
+    trained_model = trained_model['model_state']
+    trained_model.eval()
 
-    # Load the pre-trained model
-    model = load_model(model_path)
-
-    # Process all images in the "Blurry" folder
+    # Perform model-based classification on blurry images
     for image_name in os.listdir(blurry_folder):
         image_path = os.path.join(blurry_folder, image_name)
-        if os.path.isfile(image_path) and image_name.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
-            image = cv2.imread(image_path)
-            image = cv2.resize(image, (224, 224))  # Resize for model input
-            image = image / 255.0  # Normalize image
+        img = cv2.imread(image_path, 0)  # Assuming the image is grayscale
 
-            # Add batch dimension and predict
-            image = image.reshape((1, 224, 224, 3))
-            prediction = model.predict(image)
+        prediction = is_image_blurry(trained_model, img)
 
-            # Check prediction and move blurry images accordingly
-            if prediction[0][0] > 0.5:  # Assuming binary classification (blurry or not)
-                print(f"{image_name} classified as blurry.")
-                # Move the blurry image to the same folder
-                cv2.imwrite(os.path.join(blurry_folder, image_name), image)
-                os.remove(image_path)
+        if prediction:  # If the image is classified as blurry, move it
+            print(f"{image_name} is blurry!")
+            # Here you can move the image, or any other processing you want
+            new_location = os.path.join(input_folder, "Blurry", "Processed", image_name)
+            os.rename(image_path, new_location)
+
 
 def main():
-    # Parse arguments
-    parser = argparse.ArgumentParser(description="Process blurry images")
-    parser.add_argument("-i", "--input", required=True, help="Input folder containing images")
-    parser.add_argument("-t", "--threshold", type=float, default=100.0, help="Threshold for Laplacian blurriness detection")
-    parser.add_argument("-m", "--model", help="Path to the pre-trained model")
-    parser.add_argument("-f", "--final_folder", help="Folder to store final blurry images", required=False)
-    
+    parser = argparse.ArgumentParser(description='Process blurry images and run model-based classification.')
+    parser.add_argument('-i', '--input', type=str, required=True, help='Input folder path')
+    parser.add_argument('-m', '--model', type=str, required=True, help='Model file path')
+    parser.add_argument('-t', '--threshold', type=float, default=19.0, help='Threshold for blur classification')
+    parser.add_argument('-f', '--final_blurry_folder', type=str, help='Final folder for blurry images')
+
     args = parser.parse_args()
 
-    # Detect blurry images
-    detect_blurry_images(args.input, args.threshold)
+    # Run the model-based classification if the checkbox is selected (modelbased == True)
+    if args.final_blurry_folder:  # Check if final_blurry_folder exists (model-based checkbox is selected)
+        model_based_classification(args.input, model_path=args.model)
 
-    # If the model path is provided, run model-based classification
-    if args.model:
-        model_based_classification(args.input, args.model)
+    # Otherwise, process using the threshold and blur detection
+    # This part involves processing images based on the threshold if model-based is not selected
 
-    # If a final folder is provided, move the images to the final folder
-    if args.final_folder:
-        # Ensure the final folder exists
-        if not os.path.exists(args.final_folder):
-            os.mkdir(args.final_folder)
-
-        # Move blurry images from the "Blurry" folder to the final folder
-        blurry_folder = os.path.join(args.input, "Blurry")
-        for image_name in os.listdir(blurry_folder):
-            blurry_image_path = os.path.join(blurry_folder, image_name)
-            if os.path.isfile(blurry_image_path):
-                final_image_path = os.path.join(args.final_folder, image_name)
-                os.rename(blurry_image_path, final_image_path)
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
