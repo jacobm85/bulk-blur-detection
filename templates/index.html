@@ -1,152 +1,94 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
-    <title>Blur Detector</title>
-    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blur Detection</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/4.5.2/css/bootstrap.min.css">
     <style>
-        body {
-            font-family: Arial, sans-serif;
-        }
         .container {
-            width: 80%;
-            margin: 0 auto;
-            padding: 20px;
+            margin-top: 50px;
         }
-        .file-browser {
-            background-color: #f0f0f0;
-            border: 1px solid #ccc;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-        }
-        .directory, .file {
-            margin: 5px 0;
-            padding: 5px;
-            cursor: pointer;
-        }
-        .directory {
-            font-weight: bold;
-        }
-        .actions {
-            text-align: right;
-        }
-        .form-section {
-            text-align: center;
+
+        .alert {
             margin-top: 20px;
-        }
-        .current-path {
-            font-style: italic;
-        }
-        button {
-            background-color: #4CAF50;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: background-color 0.3s;
-        }
-        button:hover {
-            background-color: #45a049;
-        }
-        .back-button {
-            background-color: #f44336;
-        }
-        .back-button:hover {
-            background-color: #e53935;
-        }
-        .selected {
-            background-color: #2196F3;
-        }
-        .selected:hover {
-            background-color: #1E88E5;
-        }
-        .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #3498db;
-            border-radius: 50%;
-            width: 30px;
-            height: 30px;
-            animation: spin 2s linear infinite;
-            display: inline-block;
-            margin-top: 10px;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
         }
     </style>
 </head>
+
 <body>
-
     <div class="container">
-        <h1>Blur Detection and Classification</h1>
+        <h2>Bulk Blur Detection</h2>
+        <form id="blurForm" action="/process" method="POST" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="inputFolder">Select Folder:</label>
+                <input type="file" class="form-control" id="inputFolder" name="inputFolder" webkitdirectory mozdirectory>
+            </div>
+            <div class="form-group">
+                <label for="threshold">Set Threshold (Default 19.0):</label>
+                <input type="number" class="form-control" id="threshold" name="threshold" value="19.0" step="0.1">
+            </div>
+            <div class="form-group form-check">
+                <input type="checkbox" class="form-check-input" id="modelbased" name="modelbased">
+                <label class="form-check-label" for="modelbased">Use Model-Based Classification</label>
+            </div>
+            <button type="submit" class="btn btn-primary">Process Images</button>
+        </form>
 
-        <div class="file-browser">
-            <h2>Browse Files</h2>
-            <p class="current-path">Current Path: /app/images</p>
-            <div id="fileList"></div>
+        <div id="message" class="alert alert-info" role="alert" style="display:none;">
+            Processing images, please wait...
         </div>
 
-        <div class="form-section">
-            <h2>Process Images</h2>
-            <form id="processForm" method="POST" action="/process">
-                <label for="source_folder">Select Source Folder:</label>
-                <input type="text" name="source_folder" id="source_folder" readonly value="/app/images" style="width: 80%"><br><br>
-
-                <label for="threshold">Set Blurry Threshold:</label>
-                <input type="number" name="threshold" id="threshold" value="19" min="1" max="1000"><br><br>
-
-                <label for="modelbased">Model-Based Classification:</label>
-                <input type="checkbox" name="modelbased" id="modelbased"><br><br>
-
-                <label for="final_blurry_folder">Final Blurry Folder (Optional):</label>
-                <input type="text" name="final_blurry_folder" id="final_blurry_folder" style="width: 80%"><br><br>
-
-                <div class="actions">
-                    <button type="submit">Process</button>
-                </div>
-            </form>
+        <div id="result" class="alert alert-success" role="alert" style="display:none;">
+            <strong>Success!</strong> Images have been processed.
         </div>
-
     </div>
 
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/4.5.2/js/bootstrap.bundle.min.js"></script>
     <script>
-        var socket = io();
-
-        // Function to update the selected folder input field
-        function updateFolderInput(path) {
-            // Set the value of the input field to the selected path
-            document.getElementById("source_folder").value = path;
-        }
-
-        // Implement your browse functionality here
-        socket.on('files', function(data) {
-            // Update the file/folder list UI based on the directory received
-            const fileList = document.getElementById("fileList");
-            fileList.innerHTML = '';
-
-            data.files.forEach(function(item) {
-                const fileItem = document.createElement('div');
-                fileItem.classList.add(item.is_dir ? 'directory' : 'file');
-                fileItem.textContent = item.name;
-
-                fileItem.addEventListener('click', function() {
-                    // When a folder is clicked, update the folder input
-                    if (item.is_dir) {
-                        updateFolderInput(item.name);  // Update input with folder name
-                    }
-                });
-
-                fileList.appendChild(fileItem);
-            });
+        // Show the "Select Folder" input field functionality
+        document.getElementById('inputFolder').addEventListener('change', function () {
+            var folderPath = this.files[0].webkitRelativePath;
+            if (folderPath) {
+                console.log("Selected folder: " + folderPath.split('/')[0]);
+            }
         });
 
-        // Initial connection to the socket to fetch files and directories
-        socket.emit('browse', { path: '/app/images' });
+        // Submit form
+        $("#blurForm").on("submit", function (event) {
+            event.preventDefault();
 
+            var formData = new FormData(this);
+            var threshold = $("#threshold").val();
+            formData.append("threshold", threshold);
+
+            // Check if model-based classification is selected
+            if ($("#modelbased").prop('checked')) {
+                formData.append("modelbased", "true");
+            }
+
+            $("#message").show();  // Show the processing message
+
+            // Ajax request to handle form submission
+            $.ajax({
+                url: "/process",  // Adjust the action URL if necessary
+                type: "POST",
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function (data) {
+                    $("#message").hide();
+                    $("#result").show();
+                },
+                error: function (err) {
+                    $("#message").hide();
+                    alert("An error occurred: " + err.statusText);
+                }
+            });
+        });
     </script>
-
 </body>
+
 </html>
