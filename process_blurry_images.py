@@ -99,7 +99,7 @@ def model_based_classification(input_folder, model_path):
         except Exception as e:
             print(f"An error occurred while processing {image_name}: {e}")
 
-def process_images(input_folder, threshold, model_path=None, modelbased=False):
+def process_images(input_folder, threshold, model_path=None, modelbased=True):
     # Step 1: Detect blurry images based on Laplacian variance
     detect_blurry_images(input_folder, threshold)
     
