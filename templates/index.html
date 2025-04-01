@@ -20,10 +20,12 @@
             margin-bottom: 20px;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
         }
-        .directory {
+        .directory, .file {
             margin: 5px 0;
             padding: 5px;
             cursor: pointer;
+        }
+        .directory {
             font-weight: bold;
         }
         .actions {
@@ -60,112 +62,70 @@
         .selected:hover {
             background-color: #1E88E5;
         }
-        .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #3498db;
-            border-radius: 50%;
-            width: 30px;
-            height: 30px;
-            animation: spin 2s linear infinite;
-            display: none;
-            margin: 0 auto;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Blur Detector</h1>
+
+<div class="container">
+    <h1>Blur Detector</h1>
+    <div class="form-section">
         <h2>Select Folder</h2>
-        <div id="file-browser" class="file-browser"></div>
-        <div class="actions">
-            <button type="button" id="select-folder-btn" onclick="selectFolder()">Select This Folder</button>
+        <div id="path" class="current-path">Current path: /</div>
+        <div class="file-browser">
+            <div id="files-list"></div>
+            <div class="actions">
+                <button id="back" class="back-button">Back</button>
+            </div>
         </div>
-        <form id="process-form" method="POST" action="/process" class="form-section" onsubmit="showSpinner()">
-            <input type="hidden" name="source_folder" id="source_folder">
-            <div>
-                <p>Higher threshold = more images. 19 is clearly blurry photos. 100+ is more prone to false positives due to motion blur or parts being out of focus.</p>
-                <label for="threshold">Threshold for blurriness (19 default):</label>
-                <input type="text" name="threshold" id="threshold" value="19">
-            </div>
-            <br><br>
-            <div>
-                <label for="use_model">Use Trained Model for Classification:</label>
-                <input type="checkbox" id="use_model" name="use_model" checked>
-            </div>
-            <br><br>
-            <button type="submit">Process Images in Folder</button>
-            <div id="spinner" class="spinner"></div>
+        <form method="POST" action="/process">
+            <input type="text" name="source_folder" id="source-folder" hidden />
+            <label for="threshold">Threshold:</label>
+            <input type="number" name="threshold" min="0" max="100" step="0.1" required /><br><br>
+            <label for="modelbased">Use model-based classification:</label>
+            <input type="checkbox" name="modelbased" id="modelbased" /><br><br>
+            <button type="submit">Process</button>
         </form>
     </div>
+</div>
 
-    <script>
-        const socket = io();
-        let currentPath = '/app/images';
-        let folderSelected = false;
+<script>
+    const socket = io.connect('http://' + document.domain + ':' + location.port);
 
-        function browse(path) {
-            currentPath = path;
-            folderSelected = false;
-            document.getElementById('select-folder-btn').classList.remove('selected');
-            socket.emit('browse', {path: path});
-        }
+    // Handle directory browsing
+    let currentPath = '/';
 
-        function goBack() {
-            const pathSegments = currentPath.split('/');
-            pathSegments.pop();
-            const newPath = pathSegments.join('/');
-            browse(newPath || '/app/images');
-        }
+    socket.emit('browse', { path: currentPath });
 
-        function selectFolder() {
-            document.getElementById('source_folder').value = currentPath;
-            document.getElementById('select-folder-btn').classList.add('selected');
-            folderSelected = true;
-        }
+    socket.on('files', function (data) {
+        const filesDiv = document.getElementById('files-list');
+        filesDiv.innerHTML = '';
 
-        function showSpinner() {
-            document.querySelector('button[type="submit"]').textContent = 'Processing...';
-            document.getElementById('spinner').style.display = 'block';
-        }
-
-        socket.on('files', data => {
-            const fileBrowser = document.getElementById('file-browser');
-            fileBrowser.innerHTML = '';
-
-            const path = document.createElement('p');
-            path.className = 'current-path';
-            path.textContent = `Current path: ${data.path}`;
-            fileBrowser.appendChild(path);
-
-            data.files.forEach(file => {
-                if (file.is_dir) {  // Only display directories
-                    const fileElement = document.createElement('div');
-                    fileElement.textContent = file.name;
-                    fileElement.className = 'directory';
-                    fileElement.onclick = () => {
-                        browse(data.path + '/' + file.name);
-                    };
-                    fileBrowser.appendChild(fileElement);
-                }
-            });
-
-            const backButton = document.createElement('button');
-            backButton.textContent = 'Back';
-            backButton.className = 'back-button';
-            backButton.onclick = goBack;
-            fileBrowser.appendChild(backButton);
+        data.files.forEach(file => {
+            const div = document.createElement('div');
+            div.textContent = file.name;
+            div.classList.add(file.is_dir ? 'directory' : 'file');
+            div.onclick = () => navigate(file, data.path);
+            filesDiv.appendChild(div);
         });
 
-        socket.on('error', data => {
-            alert(data.message);
-        });
+        const pathDisplay = document.getElementById('path');
+        pathDisplay.textContent = 'Current path: ' + data.path;
+    });
 
-        // Start browsing from /app/images
-        browse('/app/images');
-    </script>
+    function navigate(file, path) {
+        if (file.is_dir) {
+            currentPath = path + '/' + file.name;
+            socket.emit('browse', { path: currentPath });
+        }
+    }
+
+    document.getElementById('back').onclick = () => {
+        const pathParts = currentPath.split('/');
+        pathParts.pop();
+        currentPath = pathParts.join('/');
+        socket.emit('browse', { path: currentPath });
+    };
+</script>
+
 </body>
 </html>
