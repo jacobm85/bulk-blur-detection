@@ -30,7 +30,7 @@ def browse(data):
 def process_images():
     source_folder = request.form['source_folder']
     threshold = request.form['threshold']
-    model_based = request.form.get('model_based', False)
+    modelbased = request.form.get('model_based', False)
 
     # Debugging log: print the received source folder
     print(f"Received source folder: {source_folder}")
@@ -65,7 +65,7 @@ def process_images():
             BLUR_DETECTOR_SCRIPT, 
             '-i', source_folder, 
             '-t', str(threshold),
-            '-mb', model_based,
+            '-mb', modelbased,
             '-m', '/app/model/trained_model-Kaggle_dataset',  # Correct path to the model for classification
         ]
         try:
