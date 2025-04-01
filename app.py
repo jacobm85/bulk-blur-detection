@@ -7,7 +7,8 @@ import eventlet
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='eventlet')
 
-BLUR_DETECTOR_SCRIPT = '/app/blur_detector.py'
+# BLUR_DETECTOR_SCRIPT = '/app/blur_detector.py'
+BLUR_DETECTOR_SCRIPT = '/app/process_blurry_images.py'
 BASE_DIR = '/app/images'  # Change this to your desired path
 
 @app.route('/')
@@ -37,7 +38,16 @@ def process_images():
         return "Invalid threshold!", 400
 
     # Run the blur detector script with user parameters
-    command = ['python', BLUR_DETECTOR_SCRIPT, '-i', source_folder, '-t', threshold]
+    # command = ['python', BLUR_DETECTOR_SCRIPT, '-i', source_folder, '-t', threshold]
+    command = [
+    'python', 
+    BLUR_DETECTOR_SCRIPT, 
+    '-i', source_folder,          # input folder containing images to process
+    '-t', str(threshold),         # threshold for Laplacian blurriness detection
+    '-f', final_blurry_folder,    # final folder to move the detected blurry images
+    '-m', trained_model_path      # path to the pre-trained model
+]
+
     try:
         result = subprocess.run(command, check=True, capture_output=True, text=True)
         print(result.stdout)  # Optionally log the output for debugging
