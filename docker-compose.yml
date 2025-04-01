@@ -10,3 +10,4 @@ services:
       - "5050:5000"  # Expose the web app on port 5050
     environment:
       - FLASK_ENV=development
+    restart: unless-stopped  # Restart the container unless manually stopped
