@@ -99,12 +99,12 @@ def model_based_classification(input_folder, model_path):
         except Exception as e:
             print(f"An error occurred while processing {image_name}: {e}")
 
-def process_images(input_folder, threshold, model_path=None, modelbased=True):
+def process_images(input_folder, threshold, model_path=None, modelbased=False):
     # Step 1: Detect blurry images based on Laplacian variance
-    detect_blurry_images(input_folder, threshold)
+  #  detect_blurry_images(input_folder, threshold)
     
     # Step 2: If model-based classification is enabled, classify using the PyTorch model
-    if modelbased:
+   # if modelbased:
         model_based_classification(input_folder, model_path)
 
 if __name__ == "__main__":
