@@ -64,4 +64,59 @@
         }
         .spinner {
             border: 4px solid #f3f3f3;
-            border-top: 4px solid #
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 2s linear infinite;
+            display: inline-block;
+            margin-top: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Blur Detection and Classification</h1>
+
+        <div class="file-browser">
+            <h2>Browse Files</h2>
+            <p class="current-path">Current Path: /app/images</p>
+            <div id="fileList"></div>
+        </div>
+
+        <div class="form-section">
+            <h2>Process Images</h2>
+            <form method="POST" action="/process">
+                <label for="source_folder">Select Source Folder:</label>
+                <input type="text" name="source_folder" id="source_folder" readonly value="/app/images" style="width: 80%"><br><br>
+
+                <label for="threshold">Set Blurry Threshold:</label>
+                <input type="number" name="threshold" id="threshold" value="19" min="1" max="1000"><br><br>
+
+                <label for="modelbased">Model-Based Classification:</label>
+                <input type="checkbox" name="modelbased" id="modelbased"><br><br>
+
+                <label for="final_blurry_folder">Final Blurry Folder (Optional):</label>
+                <input type="text" name="final_blurry_folder" id="final_blurry_folder" style="width: 80%"><br><br>
+
+                <div class="actions">
+                    <button type="submit">Process</button>
+                </div>
+            </form>
+        </div>
+
+    </div>
+
+    <script>
+        var socket = io();
+
+        // Implement your browse functionality here
+    </script>
+
+</body>
+</html>
