@@ -20,6 +20,11 @@
             margin-bottom: 20px;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
         }
+        .directory, .file {
+            margin: 5px 0;
+            padding: 5px;
+            cursor: pointer;
+        }
         .directory {
             font-weight: bold;
         }
@@ -83,20 +88,10 @@
         </div>
         <form id="process-form" method="POST" action="/process" class="form-section" onsubmit="showSpinner()">
             <input type="hidden" name="source_folder" id="source_folder">
-            
             <div>
+                <p>Higher threshold = more images. 19 is clearly blurry photos. 100+ is more prone to false positives due to motion blur or parts being out of focus.</p>
                 <label for="threshold">Threshold for blurriness (19 default):</label>
                 <input type="text" name="threshold" id="threshold" value="19">
-            </div>
-            <br><br>
-            <div>
-                <label for="modelbased">Enable model-based classification:</label>
-                <input type="checkbox" name="modelbased" id="modelbased">
-            </div>
-            <br><br>
-            <div>
-                <label for="model_path">Path to Model:</label>
-                <input type="text" name="model_path" id="model_path" value="/path/to/your/model">
             </div>
             <br><br>
             <button type="submit">Process Images in Folder</button>
@@ -146,9 +141,11 @@
             data.files.forEach(file => {
                 const fileElement = document.createElement('div');
                 fileElement.textContent = file.name;
-                fileElement.className = 'directory';
+                fileElement.className = file.is_dir ? 'directory' : 'file';
                 fileElement.onclick = () => {
-                    browse(data.path + '/' + file.name);
+                    if (file.is_dir) {
+                        browse(data.path + '/' + file.name);
+                    }
                 };
                 fileBrowser.appendChild(fileElement);
             });
