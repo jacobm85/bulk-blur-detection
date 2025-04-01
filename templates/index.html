@@ -5,86 +5,127 @@
     <title>Blur Detector</title>
     <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
     <style>
-        body { font-family: Arial, sans-serif; }
-        .container { width: 80%; margin: 0 auto; padding: 20px; }
-        .file-browser { background-color: #f0f0f0; border: 1px solid #ccc; padding: 20px; margin-bottom: 20px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); }
-        .directory { font-weight: bold; cursor: pointer; margin: 5px 0; padding: 5px; }
-        .actions { text-align: right; }
-        button { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
-        button:hover { background-color: #45a049; }
-        .selected { background-color: #2196F3; }
+        body {
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            width: 80%;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .file-browser {
+            background-color: #f0f0f0;
+            border: 1px solid #ccc;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        .directory, .file {
+            margin: 5px 0;
+            padding: 5px;
+            cursor: pointer;
+        }
+        .directory {
+            font-weight: bold;
+        }
+        .actions {
+            text-align: right;
+        }
+        .form-section {
+            text-align: center;
+            margin-top: 20px;
+        }
+        .current-path {
+            font-style: italic;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .back-button {
+            background-color: #f44336;
+        }
+        .back-button:hover {
+            background-color: #e53935;
+        }
+        .selected {
+            background-color: #2196F3;
+        }
+        .selected:hover {
+            background-color: #1E88E5;
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Blur Detector</h1>
+
+<div class="container">
+    <h1>Blur Detector</h1>
+    <div class="form-section">
         <h2>Select Folder</h2>
-        <div id="file-browser" class="file-browser"></div>
-        <div class="actions">
-            <button type="button" id="select-folder-btn" onclick="selectFolder()">Select This Folder</button>
+        <div id="path" class="current-path">Current path: /</div>
+        <div class="file-browser">
+            <div id="files-list"></div>
+            <div class="actions">
+                <button id="back" class="back-button">Back</button>
+            </div>
         </div>
-        <form id="process-form" method="POST" action="/process" class="form-section">
-            <input type="hidden" name="source_folder" id="source_folder">
-            <label for="threshold">Threshold for blurriness (19 default):</label>
-            <input type="text" name="threshold" id="threshold" value="19">
-            <br><br>
-            <label for="final_blurry_folder">Use model-based classification:</label>
-            <input type="checkbox" name="model_based_classification" id="model_based_classification" value="true">
-            <br><br>
-            <button type="submit">Process Images</button>
+        <form method="POST" action="/process">
+            <input type="text" name="source_folder" id="source-folder" hidden />
+            <label for="threshold">Threshold:</label>
+            <input type="number" name="threshold" min="0" max="100" step="0.1" required /><br><br>
+            <label for="modelbased">Use model-based classification:</label>
+            <input type="checkbox" name="modelbased" id="modelbased" /><br><br>
+            <button type="submit">Process</button>
         </form>
     </div>
+</div>
 
-    <script>
-        const socket = io();
-        let currentPath = '/app/images';
-        let folderSelected = false;
+<script>
+    const socket = io.connect('http://' + document.domain + ':' + location.port);
 
-        function browse(path) {
-            currentPath = path;
-            folderSelected = false;
-            socket.emit('browse', {path: path});
-        }
+    // Handle directory browsing
+    let currentPath = '/';
 
-        function goBack() {
-            const pathSegments = currentPath.split('/');
-            pathSegments.pop();
-            const newPath = pathSegments.join('/');
-            browse(newPath || '/app/images');
-        }
+    socket.emit('browse', { path: currentPath });
 
-        function selectFolder() {
-            document.getElementById('source_folder').value = currentPath;
-            folderSelected = true;
-        }
+    socket.on('files', function (data) {
+        const filesDiv = document.getElementById('files-list');
+        filesDiv.innerHTML = '';
 
-        socket.on('files', data => {
-            const fileBrowser = document.getElementById('file-browser');
-            fileBrowser.innerHTML = '';
-
-            const path = document.createElement('p');
-            path.className = 'current-path';
-            path.textContent = `Current path: ${data.path}`;
-            fileBrowser.appendChild(path);
-
-            data.files.forEach(file => {
-                if (file.is_dir) {
-                    const fileElement = document.createElement('div');
-                    fileElement.textContent = file.name;
-                    fileElement.className = 'directory';
-                    fileElement.onclick = () => { browse(data.path + '/' + file.name); };
-                    fileBrowser.appendChild(fileElement);
-                }
-            });
-
-            const backButton = document.createElement('button');
-            backButton.textContent = 'Back';
-            backButton.onclick = goBack;
-            fileBrowser.appendChild(backButton);
+        data.files.forEach(file => {
+            const div = document.createElement('div');
+            div.textContent = file.name;
+            div.classList.add(file.is_dir ? 'directory' : 'file');
+            div.onclick = () => navigate(file, data.path);
+            filesDiv.appendChild(div);
         });
 
-        socket.on('error', data => {
-            alert(data.message);
-        });
+        const pathDisplay = document.getElementById('path');
+        pathDisplay.textContent = 'Current path: ' + data.path;
+    });
 
-        //
+    function navigate(file, path) {
+        if (file.is_dir) {
+            currentPath = path + '/' + file.name;
+            socket.emit('browse', { path: currentPath });
+        }
+    }
+
+    document.getElementById('back').onclick = () => {
+        const pathParts = currentPath.split('/');
+        pathParts.pop();
+        currentPath = pathParts.join('/');
+        socket.emit('browse', { path: currentPath });
+    };
+</script>
+
+</body>
+</html>
