@@ -30,6 +30,7 @@ def browse(data):
 def process_images():
     source_folder = request.form['source_folder']
     threshold = request.form['threshold']
+    use_model = 'use_model' in request.form  # Check if the user checked the checkbox
 
     # Validate the source folder and threshold
     if not os.path.exists(source_folder):
@@ -39,14 +40,20 @@ def process_images():
 
     # Run the blur detector script with user parameters
     # command = ['python', BLUR_DETECTOR_SCRIPT, '-i', source_folder, '-t', threshold]
+
+    # Define the command to run the script based on the chec
     command = [
-    'python', 
-    BLUR_DETECTOR_SCRIPT, 
-    '-i', source_folder,          # input folder containing images to process
-    '-t', str(threshold),         # threshold for Laplacian blurriness detection
-    '-f', final_blurry_folder,    # final folder to move the detected blurry images
-    '-m', trained_model_path      # path to the pre-trained model
-]
+        'python', 
+        BLUR_DETECTOR_SCRIPT, 
+        '-i', source_folder,          # input folder containing images to process
+        '-t', str(threshold),         # threshold for Laplacian blurriness detection
+        '-m', trained_model_path      # path to the pre-trained model
+    ]
+
+    # If the user wants to use the trained model, add extra argument
+    if use_model:
+        command.append('-f')
+        command.append(final_blurry_folder)  # Add final blurry folder
 
     try:
         result = subprocess.run(command, check=True, capture_output=True, text=True)
