@@ -97,12 +97,12 @@ def is_image_blurry(trained_model, img, threshold=0.5):
     prediction = np.mean(accumulator) < threshold
     return prediction
 
-def process_images(input_folder, threshold, model_path=None, modelbased=True):
+def process_images(input_folder, threshold, model_path=None, modelbased=False):
     # Step 1: Detect blurry images based on Laplacian variance
     # detect_blurry_images(input_folder, threshold)
     
     # Step 2: If model-based classification is enabled, classify using the PyTorch model
-    if modelbased:
+    #if modelbased:
         trained_model = torch.load(model_path)
         trained_model = trained_model['model_state']
         
