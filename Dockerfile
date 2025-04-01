@@ -4,10 +4,6 @@ FROM python:3.9-slim
 # Set the working directory in the container
 WORKDIR /app
 
-# Copy necessary files
-COPY . .
-
-# Copy the requirements file from the GitHub repository
 # Install necessary dependencies for OpenCV and Git
 RUN apt-get update && \
     apt-get install -y \
