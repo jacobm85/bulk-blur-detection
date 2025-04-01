@@ -1,30 +1,14 @@
-from flask import Flask, jsonify, send_from_directory, render_template, request, redirect, url_for
+from flask import Flask, jsonify, render_template, request, redirect, url_for
 import subprocess
 import os
-from flask_socketio import SocketIO, emit
-import eventlet
 
 app = Flask(__name__)
-socketio = SocketIO(app, async_mode='eventlet')
 
-BLUR_DETECTOR_SCRIPT = '/app/process_blurry_images.py'
-BASE_DIR = '/app/images'  # Change this to your desired path
-MODEL_PATH = '/app/model/trained_model-Kaggle_dataset'  # Model path
+MODEL_PATH = '/app/model/trained_model-Kaggle_dataset'  # Update this to the correct model path
 
 @app.route('/')
 def index():
     return render_template('index.html')
-
-@socketio.on('browse')
-def browse(data):
-    path = os.path.join(BASE_DIR, data.get('path', ''))
-    if not os.path.exists(path):
-        emit('error', {'message': 'Directory does not exist!'})
-        return
-
-    files = os.listdir(path)
-    directories = [{'name': f, 'is_dir': os.path.isdir(os.path.join(path, f))} for f in files]
-    emit('files', {'path': path, 'files': directories})
 
 @app.route('/process', methods=['POST'])
 def process_images():
@@ -42,7 +26,7 @@ def process_images():
     # Run the blur detector script with user parameters
     command = [
         'python', 
-        BLUR_DETECTOR_SCRIPT, 
+        '/app/process_blurry_images.py', 
         '-i', source_folder,           # input folder containing images to process
         '-t', str(threshold),          # threshold for Laplacian blurriness detection
         '-f', final_blurry_folder,     # final folder to move the detected blurry images
@@ -63,4 +47,4 @@ def process_images():
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5000)
