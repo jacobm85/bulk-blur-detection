@@ -23,7 +23,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install flask flask-socketio eventlet
 
 # Copy the index.html file
-#COPY templates/index.html /app/templates/index.html
+COPY templates/index.html /app/templates/index.html
 
 # Copy the web app code
 #COPY app.py /app/app.py
