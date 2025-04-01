@@ -40,11 +40,21 @@ def model_based_classification(input_folder, model_path):
 
     if not os.path.exists(blurry_folder_new):
         os.mkdir(blurry_folder_new)
-    
-    # Load the trained PyTorch model
-    trained_model = torch.load(model_path)
-    trained_model = trained_model['model_state']
-    trained_model.eval()  # Set the model to evaluation mode
+
+    # Try loading the model and handle errors
+    try:
+        trained_model = torch.load(model_path)
+        trained_model = trained_model['model_state']
+        trained_model.eval()  # Set the model to evaluation mode
+    except FileNotFoundError:
+        print(f"Model file not found: {model_path}")
+        return
+    except KeyError:
+        print(f"Error: Model file is missing 'model_state' key.")
+        return
+    except Exception as e:
+        print(f"An error occurred while loading the model: {e}")
+        return
     
     # Loop through all images in the "Blurry" folder
     for image_name in os.listdir(blurry_folder):
@@ -53,22 +63,29 @@ def model_based_classification(input_folder, model_path):
         if not os.path.isfile(image_path):
             continue
         
-        # Read and process the image
-        image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-        image_resized = cv2.resize(image, (224, 224))  # Resize image for model input
-        image_normalized = image_resized / 255.0
-        image_normalized = torch.tensor(image_normalized).unsqueeze(0).unsqueeze(0).float()  # Add batch and channel dimensions
-        
-        # Make prediction
-        with torch.no_grad():
-            output = trained_model(image_normalized.to(device))
-        
-        # Assuming binary classification with output [0] being blurry and [1] being sharp
-        prediction = torch.sigmoid(output).item()  # Assuming binary classification
-        
-        if prediction > 0.5:  # If blurry image as per model's prediction
-            print(f"{image_name} classified as blurry by model.")
-            os.rename(image_path, os.path.join(blurry_folder_new, image_name))  # Move the image
+        try:
+            # Read and process the image
+            image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+            if image is None:
+                print(f"Failed to read image {image_name}")
+                continue
+            
+            image_resized = cv2.resize(image, (224, 224))  # Resize image for model input
+            image_normalized = image_resized / 255.0
+            image_normalized = torch.tensor(image_normalized).unsqueeze(0).unsqueeze(0).float()  # Add batch and channel dimensions
+
+            # Make prediction
+            with torch.no_grad():
+                output = trained_model(image_normalized.to(device))
+
+            # Assuming binary classification with output [0] being blurry and [1] being sharp
+            prediction = torch.sigmoid(output).item()  # Assuming binary classification
+
+            if prediction > 0.5:  # If blurry image as per model's prediction
+                print(f"{image_name} classified as blurry by model.")
+                os.rename(image_path, os.path.join(blurry_folder_new, image_name))  # Move the image
+        except Exception as e:
+            print(f"An error occurred while processing {image_name}: {e}")
 
 def process_images(input_folder, threshold, model_path=None, modelbased=False):
     # Step 1: Detect blurry images based on Laplacian variance
