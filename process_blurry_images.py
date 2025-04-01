@@ -2,70 +2,72 @@ import os
 import cv2
 import numpy as np
 import argparse
-from tensorflow.keras.models import load_model
+from keras.models import load_model
 
-# Function for detecting blurry images
 def detect_blurry_images(input_folder, threshold=100.0):
     blurry_folder = os.path.join(input_folder, "Blurry")
     
     if not os.path.exists(blurry_folder):
         os.mkdir(blurry_folder)
     
-    # Loop through images in the input folder
+    # Loop through all images in the folder and check blurriness
     for image_name in os.listdir(input_folder):
         image_path = os.path.join(input_folder, image_name)
+        
+        if not os.path.isfile(image_path):
+            continue
 
-        if os.path.isdir(image_path):
-            continue  # Skip subdirectories
-
+        # Read the image
         image = cv2.imread(image_path)
-        fm = cv2.Laplacian(image, cv2.CV_64F).var()  # Focus measure
-
+        
+        # Calculate the Laplacian variance to check for blurriness
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        fm = cv2.Laplacian(gray, cv2.CV_64F).var()
+        
         if fm < threshold:
             print(f"{image_name} is blurry.")
             # Move the blurry image to the "Blurry" folder
-            os.rename(image_path, os.path.join(blurry_folder, image_name))  # Move instead of rewriting
-
-# Function for model-based classification
+            os.rename(image_path, os.path.join(blurry_folder, image_name))  # Move the image
+            
 def model_based_classification(input_folder, model_path):
     blurry_folder = os.path.join(input_folder, "Blurry")
-    blurry_folder_new = os.path.join(blurry_folder, "Blurry")  # New folder for model classification
+    blurry_folder_new = os.path.join(blurry_folder, "Blurry")
 
     if not os.path.exists(blurry_folder_new):
         os.mkdir(blurry_folder_new)
     
     model = load_model(model_path)
     
-    # Classify images in the blurry folder
     for image_name in os.listdir(blurry_folder):
         image_path = os.path.join(blurry_folder, image_name)
-
-        if os.path.isdir(image_path):
-            continue  # Skip subdirectories
-
-        # Image preprocessing and prediction steps here
-        image = cv2.imread(image_path)
-        image = cv2.resize(image, (224, 224))  # Assuming model expects 224x224 input size
-        image = np.expand_dims(image, axis=0)
-
-        prediction = model.predict(image)
         
-        if prediction[0][0] > 0.5:  # Assuming binary classification
-            os.rename(image_path, os.path.join(blurry_folder_new, image_name))
+        if not os.path.isfile(image_path):
+            continue
+        
+        image = cv2.imread(image_path)
+        image_resized = cv2.resize(image, (224, 224))  # Resize image for model input
+        image_normalized = np.expand_dims(image_resized, axis=0) / 255.0
+        
+        # Predict the class of the image
+        prediction = model.predict(image_normalized)
+        
+        if prediction[0][0] > 0.5:  # Assuming 0.5 threshold for binary classification
+            print(f"{image_name} classified as blurry by model.")
+            os.rename(image_path, os.path.join(blurry_folder_new, image_name))  # Move the image
 
-def main():
-    parser = argparse.ArgumentParser(description="Process blurry images.")
-    parser.add_argument('-i', '--input', required=True, help="Input folder containing images")
-    parser.add_argument('-t', '--threshold', type=float, default=100.0, help="Threshold for detecting blurry images")
-    parser.add_argument('-m', '--model', required=False, help="Path to the pre-trained model for classification")
+def process_images(input_folder, threshold, model_path=None, modelbased=False):
+    detect_blurry_images(input_folder, threshold)
+    
+    if modelbased and model_path:
+        model_based_classification(input_folder, model_path)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-i', '--images', required=True, help="Input folder with images")
+    parser.add_argument('-t', '--threshold', default=19.0, type=float, help="Threshold for blur detection")
+    parser.add_argument('-m', '--model', help="Path to the trained model for model-based classification")
+    parser.add_argument('-mb', '--modelbased', action='store_true', help="Enable model-based classification")
     
     args = parser.parse_args()
     
-    detect_blurry_images(args.input, threshold=args.threshold)
-
-    # If model path is provided, run model-based classification
-    if args.model:
-        model_based_classification(args.input, model_path=args.model)
-
-if __name__ == '__main__':
-    main()
+    process_images(args.images, args.threshold, args.model, args.modelbased)
