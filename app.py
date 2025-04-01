@@ -66,7 +66,7 @@ def process_images():
             BLUR_DETECTOR_SCRIPT, 
             '-i', source_folder, 
             '-t', str(threshold), 
-            '-f', source_folder,
+   #         '-f', source_folder,
             '-m', '/app/model/trained_model-Kaggle_dataset',  # Correct path to the model for classification
         ]
         try:
