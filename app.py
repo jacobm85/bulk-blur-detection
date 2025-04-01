@@ -7,9 +7,9 @@ import eventlet
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='eventlet')
 
-# Path to blur detector script and other constants
 BLUR_DETECTOR_SCRIPT = '/app/process_blurry_images.py'
 BASE_DIR = '/app/images'  # Change this to your desired path
+MODEL_PATH = '/app/model/trained_model-Kaggle_dataset'  # Model path
 
 @app.route('/')
 def index():
@@ -30,15 +30,12 @@ def browse(data):
 def process_images():
     source_folder = request.form['source_folder']
     threshold = request.form['threshold']
-    model_based = request.form.get('model_based', False)
-
-    # Debugging log: print the received source folder
-    print(f"Received source folder: {source_folder}")
-
+    model_based = 'modelbased' in request.form  # Checkbox value
+    final_blurry_folder = request.form.get('final_blurry_folder', '')
+    
     # Validate the source folder and threshold
     if not os.path.exists(source_folder):
-        return f"Source folder does not exist: {source_folder}!", 400
-
+        return "Source folder does not exist!", 400
     if not threshold.isdigit() or int(threshold) < 0:
         return "Invalid threshold!", 400
 
@@ -46,11 +43,15 @@ def process_images():
     command = [
         'python', 
         BLUR_DETECTOR_SCRIPT, 
-        '-i', source_folder,          # input folder containing images to process
-        '-t', str(threshold),         # threshold for Laplacian blurriness detection
-        '-f', source_folder,          # final folder to move the detected blurry images
-        '-m', '/app/model/trained_model-Kaggle_dataset'  # Correct path to the pre-trained model
+        '-i', source_folder,           # input folder containing images to process
+        '-t', str(threshold),          # threshold for Laplacian blurriness detection
+        '-f', final_blurry_folder,     # final folder to move the detected blurry images
+        '-m', MODEL_PATH              # path to the pre-trained model
     ]
+    
+    # If model-based classification is enabled
+    if model_based:
+        command.append('-m')  # Add model path to the command
 
     try:
         result = subprocess.run(command, check=True, capture_output=True, text=True)
@@ -58,23 +59,6 @@ def process_images():
     except subprocess.CalledProcessError as e:
         print(f"Error: {e.stderr}")  # Log the error message
         return f"An error occurred while processing images: {e.stderr}", 500
-
-    # If model-based classification is selected, run that as well
-    if model_based:
-        model_command = [
-            'python', 
-            BLUR_DETECTOR_SCRIPT, 
-            '-i', source_folder, 
-            '-t', str(threshold), 
-            '-f', source_folder,
-            '-m', '/app/model/trained_model-Kaggle_dataset',  # Correct path to the model for classification
-        ]
-        try:
-            result = subprocess.run(model_command, check=True, capture_output=True, text=True)
-            print(result.stdout)
-        except subprocess.CalledProcessError as e:
-            print(f"Model classification error: {e.stderr}")
-            return f"Error in model classification: {e.stderr}", 500
 
     return redirect(url_for('index'))
 
