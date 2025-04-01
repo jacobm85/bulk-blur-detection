@@ -30,6 +30,7 @@ def browse(data):
 def process_images():
     source_folder = request.form['source_folder']
     threshold = request.form['threshold']
+    model_based = request.form.get('model_based', False)
 
     # Debugging log: print the received source folder
     print(f"Received source folder: {source_folder}")
@@ -48,7 +49,7 @@ def process_images():
         '-i', source_folder,          # input folder containing images to process
         '-t', str(threshold),         # threshold for Laplacian blurriness detection
         '-f', source_folder,          # final folder to move the detected blurry images
-        '-m', '/app/model/model.h5'    # path to the pre-trained model (make sure this is correct)
+        '-m', '/app/model/trained_model-Kaggle_dataset'  # Correct path to the pre-trained model
     ]
 
     try:
@@ -57,6 +58,23 @@ def process_images():
     except subprocess.CalledProcessError as e:
         print(f"Error: {e.stderr}")  # Log the error message
         return f"An error occurred while processing images: {e.stderr}", 500
+
+    # If model-based classification is selected, run that as well
+    if model_based:
+        model_command = [
+            'python', 
+            BLUR_DETECTOR_SCRIPT, 
+            '-i', source_folder, 
+            '-t', str(threshold), 
+            '-f', source_folder,
+            '-m', '/app/model/trained_model-Kaggle_dataset',  # Correct path to the model for classification
+        ]
+        try:
+            result = subprocess.run(model_command, check=True, capture_output=True, text=True)
+            print(result.stdout)
+        except subprocess.CalledProcessError as e:
+            print(f"Model classification error: {e.stderr}")
+            return f"Error in model classification: {e.stderr}", 500
 
     return redirect(url_for('index'))
 
