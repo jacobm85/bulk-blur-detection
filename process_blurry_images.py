@@ -8,6 +8,12 @@ from utils.feature_extractor import featureExtractor
 from utils.data_loader import TestDataset
 from torch.utils.data import Dataset, DataLoader
 
+# Add the MLP class to the safe globals (make sure you import MLP if it's not already imported)
+from utils.MLP import MLP
+
+# Add safe globals before loading the model
+torch.serialization.add_safe_globals([MLP])
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def detect_blurry_images(input_folder, threshold=19.0):
