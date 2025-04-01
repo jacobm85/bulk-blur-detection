@@ -7,7 +7,7 @@ import eventlet
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='eventlet')
 
-# BLUR_DETECTOR_SCRIPT = '/app/blur_detector.py'
+# Path to blur detector script and other constants
 BLUR_DETECTOR_SCRIPT = '/app/process_blurry_images.py'
 BASE_DIR = '/app/images'  # Change this to your desired path
 
@@ -30,11 +30,14 @@ def browse(data):
 def process_images():
     source_folder = request.form['source_folder']
     threshold = request.form['threshold']
-    model_based = request.form.get('modelbased', False)
+
+    # Debugging log: print the received source folder
+    print(f"Received source folder: {source_folder}")
 
     # Validate the source folder and threshold
     if not os.path.exists(source_folder):
-        return "Source folder does not exist!", 400
+        return f"Source folder does not exist: {source_folder}!", 400
+
     if not threshold.isdigit() or int(threshold) < 0:
         return "Invalid threshold!", 400
 
@@ -44,8 +47,8 @@ def process_images():
         BLUR_DETECTOR_SCRIPT, 
         '-i', source_folder,          # input folder containing images to process
         '-t', str(threshold),         # threshold for Laplacian blurriness detection
-        '-m', model_path,             # path to the pre-trained model
-        '-mb', str(model_based)       # whether to use model-based classification
+        '-f', source_folder,          # final folder to move the detected blurry images
+        '-m', '/app/model/model.h5'    # path to the pre-trained model (make sure this is correct)
     ]
 
     try:
@@ -57,5 +60,4 @@ def process_images():
 
     return redirect(url_for('index'))
 
-if __name__ == '__main__':
-    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
+if __name__ == '__main
