@@ -21,6 +21,8 @@ RUN git clone `--single-branch` https://github.com/jacobm85/bulk-blur-detection.
 # Install any needed packages specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install flask flask-socketio eventlet
+# Install TensorFlow (for model loading)
+RUN pip install --no-cache-dir tensorflow-cpu  # 'tensorflow' or 'tensorflow-cpu' for CPU version
 
 # Copy all the local files into the /app directory
 COPY . /app
