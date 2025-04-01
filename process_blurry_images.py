@@ -104,7 +104,7 @@ def process_images(input_folder, threshold, model_path=None, modelbased=False):
     detect_blurry_images(input_folder, threshold)
     
     # Step 2: If model-based classification is enabled, classify using the PyTorch model
-    if modelbased and model_path:
+    if modelbased:
         model_based_classification(input_folder, model_path)
 
 if __name__ == "__main__":
@@ -112,7 +112,7 @@ if __name__ == "__main__":
     parser.add_argument('-i', '--images', required=True, help="Input folder with images")
     parser.add_argument('-t', '--threshold', default=19.0, type=float, help="Threshold for blur detection")
     parser.add_argument('-m', '--model', help="Path to the trained PyTorch model for model-based classification")
-    parser.add_argument('-mb', '--modelbased', action='store_true', help="Enable model-based classification")
+    parser.add_argument('-mb', '--modelbased')#, action='store_true', help="Enable model-based classification")
     
     args = parser.parse_args()
     
