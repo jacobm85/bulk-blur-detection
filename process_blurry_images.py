@@ -36,10 +36,14 @@ def detect_blurry_images(input_folder, threshold=19.0):
 
 def model_based_classification(input_folder, model_path):
     blurry_folder = os.path.join(input_folder, "Blurry")
-    blurry_folder_new = os.path.join(blurry_folder, "Blurry")
+    sharp_folder = os.path.join(input_folder, "Sharp")
 
-    if not os.path.exists(blurry_folder_new):
-        os.mkdir(blurry_folder_new)
+    # Create the Blurry and Sharp folders if they don't exist
+    if not os.path.exists(blurry_folder):
+        os.mkdir(blurry_folder)
+
+    if not os.path.exists(sharp_folder):
+        os.mkdir(sharp_folder)
 
     # Try loading the model and handle errors
     try:
@@ -81,9 +85,13 @@ def model_based_classification(input_folder, model_path):
             # Assuming binary classification with output [0] being blurry and [1] being sharp
             prediction = torch.sigmoid(output).item()  # Assuming binary classification
 
+            # Move sharp images to the "Sharp" folder and blurry images to the "Blurry" folder
             if prediction > 0.5:  # If blurry image as per model's prediction
                 print(f"{image_name} classified as blurry by model.")
-                os.rename(image_path, os.path.join(blurry_folder_new, image_name))  # Move the image
+                os.rename(image_path, os.path.join(blurry_folder, image_name))  # Move the image to the "Blurry" folder
+            else:  # If sharp image as per model's prediction
+                print(f"{image_name} classified as sharp by model.")
+                os.rename(image_path, os.path.join(sharp_folder, image_name))  # Move the image to the "Sharp" folder
         except Exception as e:
             print(f"An error occurred while processing {image_name}: {e}")
 
