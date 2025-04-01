@@ -36,68 +36,67 @@ def detect_blurry_images(input_folder, threshold=19.0):
             # Move the blurry image to the "Blurry" folder
             os.rename(image_path, os.path.join(blurry_folder, image_name))  # Move the image
 
-def model_based_classification(input_folder, model_path):
-    blurry_folder = os.path.join(input_folder, "Blurry")
-    sharp_folder = os.path.join(input_folder, "Sharp")
 
-    # Ensure both "Blurry" and "Sharp" folders exist
-    if not os.path.exists(blurry_folder):
-        print(f"Creating blurry folder at {blurry_folder}")  # Debugging line
-        os.mkdir(blurry_folder)
+def run_testing_on_dataset(trained_model, dataset_dir, GT_blurry):
 
-    if not os.path.exists(sharp_folder):
-        print(f"Creating sharp folder at {sharp_folder}")  # Debugging line
-        os.mkdir(sharp_folder)
-
-    # Try loading the model and handle errors
-    try:
-        trained_model = torch.load(model_path)
-        trained_model = trained_model['model_state']
-        trained_model.eval()  # Set the model to evaluation mode
-    except FileNotFoundError:
-        print(f"Model file not found: {model_path}")
-        return
-    except KeyError:
-        print(f"Error: Model file is missing 'model_state' key.")
-        return
-    except Exception as e:
-        print(f"An error occurred while loading the model: {e}")
-        return
+    new_input_folder = os.path.join(dataset_dir, "Blurry")
+    blurry_folder = os.path.join(new_input_folder, "Blurry")
+    sharp_folder = os.path.join(new_input_folder, "Sharp")
     
-    # Loop through all images in the "Blurry" folder
-    for image_name in os.listdir(blurry_folder):
-        image_path = os.path.join(blurry_folder, image_name)
-        
-        if not os.path.isfile(image_path):
-            continue
-        
-        try:
-            # Read and process the image
-            image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-            if image is None:
-                print(f"Failed to read image {image_name}")
-                continue
-            
-            image_resized = cv2.resize(image, (224, 224))  # Resize image for model input
-            image_normalized = image_resized / 255.0
-            image_normalized = torch.tensor(image_normalized).unsqueeze(0).unsqueeze(0).float()  # Add batch and channel dimensions
+     # Create directories if they don't exist
+    os.makedirs(blurry_folder, exist_ok=True)
+    os.makedirs(sharp_folder, exist_ok=True)
+    
+    correct_prediction_count = 0
+    img_list = os.listdir(new_input_folder)
+    for ind, image_name in enumerate(img_list):
+        print("Blurry Image Prediction: %d / %d images processed.." % (ind, len(img_list)))
 
-            # Make prediction
-            with torch.no_grad():
-                output = trained_model(image_normalized.to(device))
+        # Read the image
+        img = cv2.imread(os.path.join(new_input_folder, image_name), 0)
 
-            # Assuming binary classification with output [0] being blurry and [1] being sharp
-            prediction = torch.sigmoid(output).item()  # Assuming binary classification
+        prediction = is_image_blurry(trained_model, img, threshold=0.5)
 
-            # Move sharp images to the "Sharp" folder and blurry images to the "Blurry" folder
-            if prediction > 0.5:  # If blurry image as per model's prediction
-                print(f"{image_name} classified as blurry by model.")
-                os.rename(image_path, os.path.join(blurry_folder, image_name))  # Move to "Blurry"
-            else:  # If sharp image as per model's prediction
-                print(f"{image_name} classified as sharp by model.")
-                os.rename(image_path, os.path.join(sharp_folder, image_name))  # Move to "Sharp"
-        except Exception as e:
-            print(f"An error occurred while processing {image_name}: {e}")
+        # Move the image to the appropriate folder based on the prediction
+        if prediction:  # If the image is predicted as blurry
+            print(f"Yes, {image_name} is blurry.")
+            shutil.move(os.path.join(dataset_dir, image_name), os.path.join(blurry_folder, image_name))
+        else:  # If the image is predicted as sharp
+            print(f"{image_name} is sharp.")
+            shutil.move(os.path.join(dataset_dir, image_name), os.path.join(sharp_folder, image_name))
+    
+    accuracy = correct_prediction_count / len(img_list)
+    return accuracy
+
+def is_image_blurry(trained_model, img, threshold=0.5):
+    feature_extractor = featureExtractor()
+    accumulator = []
+
+    # Resize the image by the downsampling factor
+    feature_extractor.resize_image(img, np.shape(img)[0], np.shape(img)[1])
+
+    # compute the image ROI using local entropy filter
+    feature_extractor.compute_roi()
+
+    # extract the blur features using DCT transform coefficients
+    extracted_features = feature_extractor.extract_feature()
+    extracted_features = np.array(extracted_features)
+
+    if(len(extracted_features) == 0):
+        return True
+    test_data_loader = DataLoader(TestDataset(extracted_features), batch_size=1, shuffle=False)
+
+    # trained_model.test()
+    for batch_num, input_data in enumerate(test_data_loader):
+        x = input_data
+        x = x.to(device).float()
+
+        output = trained_model(x)
+        _, predicted_label = torch.max(output, 1)
+        accumulator.append(predicted_label.item())
+
+    prediction= np.mean(accumulator) < threshold
+    return(prediction)
 
 def process_images(input_folder, threshold, model_path=None, modelbased=False):
     # Step 1: Detect blurry images based on Laplacian variance
@@ -105,7 +104,10 @@ def process_images(input_folder, threshold, model_path=None, modelbased=False):
     
     # Step 2: If model-based classification is enabled, classify using the PyTorch model
    # if modelbased:
-        model_based_classification(input_folder, model_path)
+            trained_model = torch.load(model_path)
+        trained_model = trained_model['model_state']
+
+        run_testing_on_dataset(trained_model, input_folder, GT_blurry = True)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
