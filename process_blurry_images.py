@@ -12,7 +12,9 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 def detect_blurry_images(input_folder, threshold=19.0):
     blurry_folder = os.path.join(input_folder, "Blurry")
     
+    # Ensure the "Blurry" folder exists
     if not os.path.exists(blurry_folder):
+        print(f"Creating blurry folder at {blurry_folder}")  # Debugging line
         os.mkdir(blurry_folder)
     
     # Loop through all images in the folder and check blurriness
@@ -38,11 +40,13 @@ def model_based_classification(input_folder, model_path):
     blurry_folder = os.path.join(input_folder, "Blurry")
     sharp_folder = os.path.join(input_folder, "Sharp")
 
-    # Create the Blurry and Sharp folders if they don't exist
+    # Ensure both "Blurry" and "Sharp" folders exist
     if not os.path.exists(blurry_folder):
+        print(f"Creating blurry folder at {blurry_folder}")  # Debugging line
         os.mkdir(blurry_folder)
 
     if not os.path.exists(sharp_folder):
+        print(f"Creating sharp folder at {sharp_folder}")  # Debugging line
         os.mkdir(sharp_folder)
 
     # Try loading the model and handle errors
@@ -88,10 +92,10 @@ def model_based_classification(input_folder, model_path):
             # Move sharp images to the "Sharp" folder and blurry images to the "Blurry" folder
             if prediction > 0.5:  # If blurry image as per model's prediction
                 print(f"{image_name} classified as blurry by model.")
-                os.rename(image_path, os.path.join(blurry_folder, image_name))  # Move the image to the "Blurry" folder
+                os.rename(image_path, os.path.join(blurry_folder, image_name))  # Move to "Blurry"
             else:  # If sharp image as per model's prediction
                 print(f"{image_name} classified as sharp by model.")
-                os.rename(image_path, os.path.join(sharp_folder, image_name))  # Move the image to the "Sharp" folder
+                os.rename(image_path, os.path.join(sharp_folder, image_name))  # Move to "Sharp"
         except Exception as e:
             print(f"An error occurred while processing {image_name}: {e}")
 
