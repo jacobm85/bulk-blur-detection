@@ -60,4 +60,5 @@ def process_images():
 
     return redirect(url_for('index'))
 
-if __name__ == '__main
+if __name__ == '__main__':
+    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
