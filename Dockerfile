@@ -16,11 +16,14 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Clone the repository
-RUN git clone https://github.com/jacobm85/bulk-blur-detection.git /app
+RUN git clone https://github.com/jacobm85/bulk-blur-detection.git .
 
 # Install any needed packages specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install flask flask-socketio eventlet
+
+# Copy all the local files into the /app directory
+COPY . /app
 
 # Copy the index.html file
 #COPY templates/index.html /app/templates/index.html
