@@ -1,8 +1,9 @@
 import os
+import torch
 import cv2
+import shutil
 import numpy as np
 import argparse
-import torch
 from utils.feature_extractor import featureExtractor
 from utils.data_loader import TestDataset
 from torch.utils.data import Dataset, DataLoader
@@ -36,14 +37,12 @@ def detect_blurry_images(input_folder, threshold=19.0):
             # Move the blurry image to the "Blurry" folder
             os.rename(image_path, os.path.join(blurry_folder, image_name))  # Move the image
 
-
 def run_testing_on_dataset(trained_model, dataset_dir, GT_blurry):
-
     new_input_folder = os.path.join(dataset_dir, "Blurry")
     blurry_folder = os.path.join(new_input_folder, "Blurry")
     sharp_folder = os.path.join(new_input_folder, "Sharp")
     
-     # Create directories if they don't exist
+    # Create directories if they don't exist
     os.makedirs(blurry_folder, exist_ok=True)
     os.makedirs(sharp_folder, exist_ok=True)
     
@@ -95,26 +94,26 @@ def is_image_blurry(trained_model, img, threshold=0.5):
         _, predicted_label = torch.max(output, 1)
         accumulator.append(predicted_label.item())
 
-    prediction= np.mean(accumulator) < threshold
-    return(prediction)
+    prediction = np.mean(accumulator) < threshold
+    return prediction
 
-def process_images(input_folder, threshold, model_path=None, modelbased=False):
+def process_images(input_folder, threshold, model_path=None, modelbased=True):
     # Step 1: Detect blurry images based on Laplacian variance
-  #  detect_blurry_images(input_folder, threshold)
+    # detect_blurry_images(input_folder, threshold)
     
     # Step 2: If model-based classification is enabled, classify using the PyTorch model
-   # if modelbased:
-            trained_model = torch.load(model_path)
+    if modelbased:
+        trained_model = torch.load(model_path)
         trained_model = trained_model['model_state']
-
-        run_testing_on_dataset(trained_model, input_folder, GT_blurry = True)
+        
+        run_testing_on_dataset(trained_model, input_folder, GT_blurry=True)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', '--images', required=True, help="Input folder with images")
     parser.add_argument('-t', '--threshold', default=19.0, type=float, help="Threshold for blur detection")
     parser.add_argument('-m', '--model', help="Path to the trained PyTorch model for model-based classification")
-    parser.add_argument('-mb', '--modelbased')#, action='store_true', help="Enable model-based classification")
+    parser.add_argument('-mb', '--modelbased', action='store_true', help="Enable model-based classification")
     
     args = parser.parse_args()
     
