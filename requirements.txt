@@ -4,3 +4,4 @@ opencv-python
 eventlet
 torch
 opencv-python
+scikit-image
