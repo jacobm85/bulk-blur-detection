@@ -80,10 +80,10 @@ def run_testing_on_dataset(trained_model, dataset_dir, GT_blurry):
         # Move the image to the appropriate folder based on the prediction
         if prediction:  # If the image is predicted as blurry
             print(f"Yes, {image_name} is blurry.")
-            shutil.move(os.path.join(dataset_dir, image_name), os.path.join(blurry_folder, image_name))
+            shutil.move(os.path.join(new_input_folder, image_name), os.path.join(blurry_folder, image_name))
         else:  # If the image is predicted as sharp
             print(f"{image_name} is sharp.")
-            shutil.move(os.path.join(dataset_dir, image_name), os.path.join(sharp_folder, image_name))
+            #shutil.move(os.path.join(new_input_folder, image_name), os.path.join(sharp_folder, image_name))
     
     accuracy = correct_prediction_count / len(img_list)
     return accuracy
@@ -133,10 +133,10 @@ def is_image_blurry(trained_model, img, threshold=0.5):
 
 def process_images(input_folder, threshold, model_path=None, modelbased=False):
     # Step 1: Detect blurry images based on Laplacian variance
-    # detect_blurry_images(input_folder, threshold)
+    detect_blurry_images(input_folder, threshold)
     
     # Step 2: If model-based classification is enabled, classify using the PyTorch model
-    #if modelbased:
+    if modelbased:
         # Add safe globals for custom classes
         add_safe_globals([Linear])  # Replace Linear with any custom class used in your model
         
