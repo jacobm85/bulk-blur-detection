@@ -1,6 +1,8 @@
 # Bulk Blur Detector Web GUI
 Combined https://github.com/danngalann/bulk-blur-detection and https://github.com/Utkarsh-Deshmukh/Blurry-Image-Detector with a simple web GUI in Docker.
 
+Having around 200k unsorted photos, with montly new additions, is a pain to handle. Script can be run to process photos and sort out blurry photos to make it easier to hadle large amount of photos. 
+
 Minor changes to original scripts (no longer case sensitive file extension) more user control are some changes. Supposed to make it easier to use the blur detection on folders. 
 Browse and select a folder, define a threshold value that determines "how much" blurryness is considered "blurry" and process. Choose if you want to use model based blurry detection. 
 It will process a directory of pictures and autonomously move the blurry ones to a different folder.
