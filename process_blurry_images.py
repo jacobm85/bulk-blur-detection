@@ -62,6 +62,10 @@ def run_testing_on_dataset(trained_model, dataset_dir, GT_blurry):
 
         # Read the image
         img = cv2.imread(os.path.join(new_input_folder, image_name), 0)
+        
+        # Validate the source folder and threshold
+        if not os.path.exists(img):
+        return f"File does not exist: {img}!", 400
 
         prediction = is_image_blurry(trained_model, img, threshold=0.5)
 
