@@ -30,9 +30,8 @@ def browse(data):
 def process_images():
     source_folder = request.form['source_folder']
     threshold = request.form['threshold']
-    #model_based = request.form.get('model_based') == 'on'  # On if checked, False otherwise
-    #model_based = request.form.get('model_based', False)
     model_based = request.form.get('modelbased') == 'True'
+    model_threshold = request.form.get('model_threshold', '0.5')
 
     # Debugging log: print the received source folder
     print(f"Received source folder: {source_folder}")
@@ -52,6 +51,7 @@ def process_images():
         '-t', str(threshold),         # threshold for Laplacian blurriness detection
         '-m', '/app/trained_model/trained_model-Kaggle_dataset',  # Correct path to the model for classification
         #'-m', '/app/trained_model/trained_model-BSD-B',  # Correct path to the model for classification
+        '-mt', str(model_threshold)  # Pass the model threshold as an argument
     ]
 
     if model_based:
