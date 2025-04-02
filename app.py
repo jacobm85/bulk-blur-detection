@@ -49,7 +49,8 @@ def process_images():
         BLUR_DETECTOR_SCRIPT, 
         '-i', source_folder,          # input folder containing images to process
         '-t', str(threshold),         # threshold for Laplacian blurriness detection
-        '-m', '/app/trained_model/trained_model-Kaggle_dataset',  # Correct path to the model for classification
+        #'-m', '/app/trained_model/trained_model-Kaggle_dataset',  # Correct path to the model for classification
+        '-m', '/app/trained_model/trained_model-BSD-B',  # Correct path to the model for classification
     ]
 
     if model_based:
