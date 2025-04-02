@@ -59,7 +59,7 @@ def run_testing_on_dataset(trained_model, dataset_dir, GT_blurry):
     img_list = os.listdir(new_input_folder)
     for ind, image_name in enumerate(img_list):
         print("Blurry Image Prediction: %d / %d images processed.." % (ind, len(img_list)))
-        image_path = os.path.join(input_folder, image_name)
+        image_path = os.path.join(new_input_folder, image_name)
         # Read the image
         img = cv2.imread(os.path.join(new_input_folder, image_name), 0)
         
