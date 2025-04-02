@@ -47,7 +47,7 @@ def detect_blurry_images(input_folder, threshold=19.0):
             os.rename(image_path, os.path.join(blurry_folder, image_name))  # Move the image
 
 def run_testing_on_dataset(trained_model, dataset_dir, GT_blurry):
-    new_input_folder = os.path.join(dataset_dir, "Blurry")
+    new_input_folder = os.path.join(dataset_dir, "blurry")
     blurry_folder = os.path.join(new_input_folder, "Blurry")
     sharp_folder = os.path.join(new_input_folder, "Sharp")
     
