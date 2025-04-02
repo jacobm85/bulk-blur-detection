@@ -46,7 +46,7 @@ def detect_blurry_images(input_folder, threshold=19.0):
             # Move the blurry image to the "Blurry" folder
             os.rename(image_path, os.path.join(blurry_folder, image_name))  # Move the image
 
-def run_testing_on_dataset(trained_model, dataset_dir, GT_blurry, model_threshold=0.5):
+def run_testing_on_dataset(trained_model, dataset_dir, model_threshold=0.5, GT_blurry=True):
     new_input_folder = os.path.join(dataset_dir, "blurry")
     blurry_folder = os.path.join(new_input_folder, "Blurry")
     sharp_folder = os.path.join(new_input_folder, "Sharp")
@@ -131,7 +131,7 @@ def is_image_blurry(trained_model, img, model_threshold):
     prediction = np.mean(accumulator) < model_threshold
     return prediction
 
-def process_images(input_folder, threshold, model_path=None, modelbased=False, model_threshold):
+def process_images(input_folder, threshold, model_threshold, model_path=None, modelbased=False):
     # Step 1: Detect blurry images based on Laplacian variance
     detect_blurry_images(input_folder, threshold)
     
@@ -143,17 +143,16 @@ def process_images(input_folder, threshold, model_path=None, modelbased=False, m
         trained_model = torch.load(model_path, weights_only=False)
         trained_model = trained_model['model_state'] if isinstance(trained_model, dict) else trained_model
         
-        run_testing_on_dataset(trained_model, input_folder, GT_blurry=True, model_threshold)
+        run_testing_on_dataset(trained_model, input_folder, model_threshold, GT_blurry=True)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', '--images', required=True, help="Input folder with images")
     parser.add_argument('-t', '--threshold', default=19.0, type=float, help="Threshold for blur detection")
+    parser.add_argument('-mt', '--model_threshold', default=0.5, type=float, help="Threshold for model-based classification")
     parser.add_argument('-m', '--model', help="Path to the trained PyTorch model for model-based classification")
     parser.add_argument('-mb', '--modelbased', action='store_true', help="Enable model-based classification")
-    parser.add_argument('-mt', '--model_threshold', default=0.5, type=float, help="Threshold for model-based classification")
-
     
     args = parser.parse_args()
     
-    process_images(args.images, args.threshold, args.model, args.modelbased, args.model_threshold)
+    process_images(args.images, args.threshold, args.model_threshold, args.model, args.modelbased)
