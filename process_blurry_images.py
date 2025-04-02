@@ -53,7 +53,7 @@ def run_testing_on_dataset(trained_model, dataset_dir, GT_blurry):
     
     # Create directories if they don't exist
     os.makedirs(blurry_folder, exist_ok=True)
-    os.makedirs(sharp_folder, exist_ok=True)
+#    os.makedirs(sharp_folder, exist_ok=True)
     
     correct_prediction_count = 0
     img_list = os.listdir(new_input_folder)
