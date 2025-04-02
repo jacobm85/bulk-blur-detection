@@ -50,6 +50,7 @@ def run_testing_on_dataset(trained_model, dataset_dir, model_threshold=0.5, GT_b
     new_input_folder = os.path.join(dataset_dir, "blurry")
     blurry_folder = os.path.join(new_input_folder, "Blurry")
     sharp_folder = os.path.join(new_input_folder, "Sharp")
+    m_threshold = model_threshold
     
     # Create directories if they don't exist
     os.makedirs(blurry_folder, exist_ok=True)
@@ -75,7 +76,7 @@ def run_testing_on_dataset(trained_model, dataset_dir, model_threshold=0.5, GT_b
             print(f"File does not exist: {image_path}")
             continue
             
-        prediction = is_image_blurry(trained_model, img, model_threshold)
+        prediction = is_image_blurry(trained_model, img, m_threshold)
 
         # Move the image to the appropriate folder based on the prediction
         if prediction:  # If the image is predicted as blurry
@@ -88,7 +89,7 @@ def run_testing_on_dataset(trained_model, dataset_dir, model_threshold=0.5, GT_b
     accuracy = correct_prediction_count / len(img_list)
     return accuracy
 
-def is_image_blurry(trained_model, img, model_threshold):
+def is_image_blurry(trained_model, img, mo_threshold=0.5):
     feature_extractor = featureExtractor()
     accumulator = []
 
@@ -128,7 +129,7 @@ def is_image_blurry(trained_model, img, model_threshold):
         _, predicted_label = torch.max(output, 1)
         accumulator.append(predicted_label.item())
 
-    prediction = np.mean(accumulator) < model_threshold
+    prediction = np.mean(accumulator) < mo_threshold
     return prediction
 
 def process_images(input_folder, threshold, model_threshold, model_path=None, modelbased=False):
