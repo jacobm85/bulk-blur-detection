@@ -84,8 +84,21 @@ def is_image_blurry(trained_model, img, threshold=0.5):
     feature_extractor = featureExtractor()
     accumulator = []
 
+    # Print the shape of the image for debugging
+    if img is None:
+        print("Error: Image is None")
+        return True
+
+    print(f"Image shape: {np.shape(img)}")
+    
     # Resize the image by the downsampling factor
-    feature_extractor.resize_image(img, np.shape(img)[0], np.shape(img)[1])
+    if img is not None and len(np.shape(img)) == 2:
+        feature_extractor.resize_image(img, np.shape(img)[0], np.shape(img)[1])
+    else:
+        print("Error: Image does not have expected dimensions")
+        return True    
+   
+    #feature_extractor.resize_image(img, np.shape(img)[0], np.shape(img)[1])
 
     # compute the image ROI using local entropy filter
     feature_extractor.compute_roi()
