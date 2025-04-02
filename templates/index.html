@@ -88,13 +88,18 @@
             <input type="hidden" name="source_folder" id="source_folder"> <!-- Hidden input to pass the selected folder -->
             <div>
                 <p>Higher threshold = more images. 19 is clearly blurry photos. 100+ is more prone to false positives due to motion blur or parts being out of focus.</p>
-                <label for="threshold">Threshold for blurriness (19 default):</label>
+                <label for="threshold">Threshold for blurriness (default: 19):</label>
                 <input type="text" name="threshold" id="threshold" value="19">
             </div>
             <br><br>
             <div>
                 <label for="modelbased">Use Model-based Classification?</label>
                 <input type="checkbox" name="modelbased" id="modelbased" value="True">
+            </div>
+            <br><br>
+            <div>
+                <label for="model_threshold">Model-based Threshold (default: 0.5):</label>
+                <input type="text" name="model_threshold" id="model_threshold" value="0.5">
             </div>
             <br><br>
             <button type="submit">Process Images in Folder</button>
