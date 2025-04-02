@@ -75,7 +75,7 @@ def run_testing_on_dataset(trained_model, dataset_dir, GT_blurry, model_threshol
             print(f"File does not exist: {image_path}")
             continue
             
-        prediction = is_image_blurry(trained_model, img, threshold=model_threshold)
+        prediction = is_image_blurry(trained_model, img, model_threshold)
 
         # Move the image to the appropriate folder based on the prediction
         if prediction:  # If the image is predicted as blurry
@@ -88,7 +88,7 @@ def run_testing_on_dataset(trained_model, dataset_dir, GT_blurry, model_threshol
     accuracy = correct_prediction_count / len(img_list)
     return accuracy
 
-def is_image_blurry(trained_model, img, threshold=model_threshold):
+def is_image_blurry(trained_model, img, model_threshold):
     feature_extractor = featureExtractor()
     accumulator = []
 
@@ -128,10 +128,10 @@ def is_image_blurry(trained_model, img, threshold=model_threshold):
         _, predicted_label = torch.max(output, 1)
         accumulator.append(predicted_label.item())
 
-    prediction = np.mean(accumulator) < threshold
+    prediction = np.mean(accumulator) < model_threshold
     return prediction
 
-def process_images(input_folder, threshold, model_path=None, modelbased=False, model_threshold=0.5):
+def process_images(input_folder, threshold, model_path=None, modelbased=False, model_threshold):
     # Step 1: Detect blurry images based on Laplacian variance
     detect_blurry_images(input_folder, threshold)
     
@@ -143,7 +143,7 @@ def process_images(input_folder, threshold, model_path=None, modelbased=False, m
         trained_model = torch.load(model_path, weights_only=False)
         trained_model = trained_model['model_state'] if isinstance(trained_model, dict) else trained_model
         
-        run_testing_on_dataset(trained_model, input_folder, GT_blurry=True, model_threshold=model_threshold)
+        run_testing_on_dataset(trained_model, input_folder, GT_blurry=True, model_threshold)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
