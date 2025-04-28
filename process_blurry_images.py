@@ -36,6 +36,10 @@ def detect_blurry_images(input_folder, threshold=19.0):
 
         # Read the image
         image = cv2.imread(image_path)
+
+        if image is None:
+            print(f" Failed to load image: {image_path}. Skipping..."
+            continue
         
         # Calculate the Laplacian variance to check for blurriness
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
