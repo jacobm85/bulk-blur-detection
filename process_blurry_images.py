@@ -24,10 +24,10 @@ def detect_blurry_images(input_folder, threshold=19.0):
     
     # Ensure the "Blurry" folder exists
     if not os.path.exists(blurry_folder):
-        print(f"Creating blurry folder at {blurry_folder}")  # Debugging line
+        print(f"Creating blurry folder at {blurry_folder}")
         os.mkdir(blurry_folder)
     
-    # Loop through all images in the folder and check blurriness
+    # Loop through all images in the selected folder and check blurriness
     for image_name in os.listdir(input_folder):
         image_path = os.path.join(input_folder, image_name)
         
@@ -38,11 +38,16 @@ def detect_blurry_images(input_folder, threshold=19.0):
         image = cv2.imread(image_path)
 
         if image is None:
-            print(f" Failed to load image: {image_path}. Skipping..."
+            print(f" Failed to load image: {image_path}. Skipping...")
             continue
-        
+
         # Calculate the Laplacian variance to check for blurriness
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        try:
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        except cv2.error as e:
+            print(f" OpenCV error for image {image_path}: {e}")
+            continue
+                
         fm = cv2.Laplacian(gray, cv2.CV_64F).var()
         
         if fm < threshold:
