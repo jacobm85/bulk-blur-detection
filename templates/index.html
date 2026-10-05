@@ -309,7 +309,8 @@
                 <img loading="lazy" src="/thumb?path=${enc(p.path)}&size=360&v=${p.mtime}" alt="">
                 <div class="meta">
                     <div class="name" title="${escapeHtml(p.path)}">${escapeHtml(p.path.split('/').pop())}</div>
-                    <div class="muted">score ${Math.round(p.score)} · ${escapeHtml(p.camera || 'unknown camera')}</div>
+                    <div class="muted">score ${Math.round(p.score)}${exposureText(p)}</div>
+                    <div class="muted name">${escapeHtml(p.camera || 'unknown camera')}</div>
                 </div>`;
             card.onclick = () => {
                 decisions[p.path] = !decisions[p.path];
@@ -392,7 +393,7 @@
         const p = photos[viewIndex];
         const move = decisions[p.path];
         $('viewer-caption').textContent = `${viewIndex + 1}/${photos.length} · ${p.path} · ${p.width}×${p.height} · ` +
-            `score ${Math.round(p.score)} · ${p.camera || 'unknown camera'}`;
+            `score ${Math.round(p.score)}${exposureText(p)} · ${p.camera || 'unknown camera'}`;
         $('viewer-move').classList.toggle('active', move);
         $('viewer-keep').classList.toggle('active', !move);
         $('viewer-zoom').textContent = zoomed ? 'Fit (Z)' : '100% (Z)';
@@ -529,6 +530,16 @@
         }
         await loadStats();
         await loadCandidates();
+    }
+
+    // ISO and shutter speed matter when judging: high ISO noise reduction can look like blur,
+    // long shutter times make camera shake likely
+    function exposureText(p) {
+        const parts = [];
+        if (p.iso) parts.push(`ISO ${Math.round(p.iso)}`);
+        if (p.exposure) parts.push(p.exposure >= 0.5 ? `${+p.exposure.toFixed(1)} s` : `1/${Math.round(1 / p.exposure)} s`);
+        if (p.fnumber) parts.push(`f/${+p.fnumber.toFixed(1)}`);
+        return parts.length ? ' · ' + parts.join(' · ') : '';
     }
 
     function escapeHtml(text) {
