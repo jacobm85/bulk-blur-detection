@@ -2,7 +2,13 @@ import cv2
 import os
 import numpy as np
 from skimage.filters.rank import entropy
-from skimage.morphology import square
+try:
+    from skimage.morphology import footprint_rectangle
+except ImportError:  # scikit-image < 0.25
+    from skimage.morphology import square
+
+    def footprint_rectangle(shape):
+        return square(shape[0])
 
 class featureExtractor(object):
     def __init__(self):
@@ -75,7 +81,7 @@ class featureExtractor(object):
         return val > self.valid_img_block_thresh
 
     def entropyFilt(self, img):
-        return entropy(img, square(self.entropy_filt_kernel_sze))
+        return entropy(img, footprint_rectangle((self.entropy_filt_kernel_sze, self.entropy_filt_kernel_sze)))
 
     def clear_object(self):
         self.resized_image = []

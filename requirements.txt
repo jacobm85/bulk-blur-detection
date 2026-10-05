@@ -1,7 +1,6 @@
 Flask
 Flask-SocketIO
-opencv-python
 eventlet
-torch
-opencv-python
+opencv-python-headless
 scikit-image
+torch

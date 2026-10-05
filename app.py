@@ -1,71 +1,129 @@
-from flask import Flask, jsonify, send_from_directory, render_template, request, redirect, url_for
-import subprocess
-import os
-from flask_socketio import SocketIO, emit
 import eventlet
+eventlet.monkey_patch()  # Must run before other imports
+
+import os
+import sys
+
+from eventlet import tpool
+from flask import Flask, render_template
+from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
 socketio = SocketIO(app, async_mode='eventlet')
 
+# Use the real (non-green) subprocess module; its output is read in a native thread via tpool
+# so the server keeps responding while a job runs, on every platform.
+subprocess = eventlet.patcher.original('subprocess')
+
 # Path to blur detector script and other constants
-BLUR_DETECTOR_SCRIPT = '/app/process_blurry_images.py'
-BASE_DIR = '/app/images'  # Change this to your desired path
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+BLUR_DETECTOR_SCRIPT = os.path.join(APP_DIR, 'process_blurry_images.py')
+MODEL_PATH = os.path.join(APP_DIR, 'trained_model', 'trained_model-Kaggle_dataset')
+# MODEL_PATH = os.path.join(APP_DIR, 'trained_model', 'trained_model-BSD-B')
+BASE_DIR = os.path.realpath(os.environ.get('IMAGES_DIR', '/app/images'))
+
+current_job = None
+
+
+def resolve_path(path):
+    """Return the real path if it is inside BASE_DIR, otherwise None."""
+    full_path = os.path.realpath(os.path.join(BASE_DIR, path or ''))
+    if os.path.commonpath([full_path, BASE_DIR]) != BASE_DIR:
+        return None
+    return full_path
+
+
+def parse_float(value, minimum, maximum=None):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number < minimum or (maximum is not None and number > maximum):
+        return None
+    return number
+
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html', base_dir=BASE_DIR)
+
 
 @socketio.on('browse')
 def browse(data):
-    path = os.path.join(BASE_DIR, data.get('path', ''))
-    if not os.path.exists(path):
+    path = resolve_path(data.get('path'))
+    if path is None or not os.path.isdir(path):
         emit('error', {'message': 'Directory does not exist!'})
         return
 
-    files = os.listdir(path)
+    files = sorted(os.listdir(path))
     directories = [{'name': f, 'is_dir': os.path.isdir(os.path.join(path, f))} for f in files]
-    emit('files', {'path': path, 'files': directories})
+    emit('files', {'path': path, 'is_root': path == BASE_DIR, 'files': directories})
 
-@app.route('/process', methods=['POST'])
-def process_images():
-    source_folder = request.form['source_folder']
-    threshold = request.form['threshold']
-    model_based = request.form.get('modelbased') == 'True'
-    model_threshold = request.form.get('model_threshold', '0.5')
 
-    # Debugging log: print the received source folder
-    print(f"Received source folder: {source_folder}")
+@socketio.on('process')
+def process_images(data):
+    global current_job
+    if current_job is not None:
+        emit('error', {'message': 'A job is already running.'})
+        return
 
-    # Validate the source folder and threshold
-    if not os.path.exists(source_folder):
-        return f"Source folder does not exist: {source_folder}!", 400
+    source_folder = resolve_path(data.get('source_folder'))
+    threshold = parse_float(data.get('threshold'), 0)
+    model_threshold = parse_float(data.get('model_threshold', 0.5), 0, 1)
+    max_size = parse_float(data.get('max_size', 0), 0)
+    model_based = bool(data.get('modelbased'))
 
-    if not threshold.isdigit() or int(threshold) < 0:
-        return "Invalid threshold!", 400
+    if source_folder is None or not os.path.isdir(source_folder):
+        emit('error', {'message': 'Source folder does not exist!'})
+        return
+    if threshold is None:
+        emit('error', {'message': 'Invalid threshold!'})
+        return
+    if model_threshold is None:
+        emit('error', {'message': 'Invalid model threshold (must be between 0 and 1)!'})
+        return
+    if max_size is None:
+        emit('error', {'message': 'Invalid max image size!'})
+        return
 
-    # Run the blur detector script with user parameters
     command = [
-        'python', 
-        BLUR_DETECTOR_SCRIPT, 
+        sys.executable, '-u',
+        BLUR_DETECTOR_SCRIPT,
         '-i', source_folder,          # input folder containing images to process
         '-t', str(threshold),         # threshold for Laplacian blurriness detection
-        '-m', '/app/trained_model/trained_model-Kaggle_dataset',  # Correct path to the model for classification
-        #'-m', '/app/trained_model/trained_model-BSD-B',  # Correct path to the model for classification
-        '-mt', str(model_threshold)  # Pass the model threshold as an argument
+        '-m', MODEL_PATH,             # model used for model-based classification
+        '-mt', str(model_threshold),  # threshold for model-based classification
+        '-s', str(int(max_size)),     # downscale before the Laplacian check (0 = off)
     ]
-
     if model_based:
         command.append('-mb')  # Add the '-mb' flag if model-based classification is enabled
-    
-    try:
-        result = subprocess.run(command, check=True, capture_output=True, text=True)
-        print(result.stdout)  # Log the output from the model-based classification process
-        return jsonify({"message": "Processing completed successfully"})
-    except subprocess.CalledProcessError as e:
-        print(f"Model classification error: {e.stderr}")
-        return f"Error in model classification: {e.stderr}", 500
 
-    return redirect(url_for('index'))
+    print(f"Starting job: {command}")
+    current_job = socketio.start_background_task(run_job, command)
+    emit('started', {'source_folder': source_folder})
+
+
+def run_job(command):
+    global current_job
+    try:
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        for line in iter(lambda: tpool.execute(process.stdout.readline), ''):
+            line = line.rstrip()
+            print(line)
+            socketio.emit('progress', {'line': line})
+        tpool.execute(process.wait)
+        if process.returncode == 0:
+            socketio.emit('done', {'message': 'Processing completed successfully'})
+        else:
+            socketio.emit('done', {'message': f'Processing failed (exit code {process.returncode})', 'failed': True})
+    finally:
+        current_job = None
+
+
+@socketio.on('connect')
+def on_connect():
+    emit('status', {'running': current_job is not None})
+
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
+    socketio.run(app, host='0.0.0.0', port=5000)

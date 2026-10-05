@@ -70,6 +70,19 @@
             display: none;
             margin: 0 auto;
         }
+        .log {
+            background-color: #222;
+            color: #ddd;
+            font-family: monospace;
+            font-size: 12px;
+            height: 300px;
+            overflow-y: auto;
+            padding: 10px;
+            margin-top: 20px;
+            text-align: left;
+            white-space: pre-wrap;
+            display: none;
+        }
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
@@ -84,7 +97,7 @@
         <div class="actions">
             <button type="button" id="select-folder-btn" onclick="selectFolder()">Select This Folder</button>
         </div>
-        <form id="process-form" method="POST" action="/process" class="form-section" onsubmit="showSpinner()">
+        <form id="process-form" class="form-section" onsubmit="startProcessing(event)">
             <input type="hidden" name="source_folder" id="source_folder"> <!-- Hidden input to pass the selected folder -->
             <div>
                 <p>Higher threshold = more images. 19 is clearly blurry photos. 100+ is more prone to false positives due to motion blur or parts being out of focus.</p>
@@ -98,19 +111,28 @@
             </div>
             <br><br>
             <div>
+                <p>Downscale images before the blur check. Much faster on large photos and makes the threshold independent of resolution, but the threshold needs recalibrating. 0 = full resolution.</p>
+                <label for="max_size">Max image size in pixels (default: 0):</label>
+                <input type="text" name="max_size" id="max_size" value="0">
+            </div>
+            <br><br>
+            <div>
                 <p>Higher threshold = more images get classed as blurry. 0.01 is strict and can be used with a higher blurriness threshold (like 80 or 100).</p>
                 <label for="model_threshold">Model-based Threshold (default: 0.5):</label>
                 <input type="text" name="model_threshold" id="model_threshold" value="0.5">
             </div>
             <br><br>
-            <button type="submit">Process Images in Folder</button>
+            <button type="submit" id="submit-btn">Process Images in Folder</button>
             <div id="spinner" class="spinner"></div>
+            <p id="status"></p>
         </form>
+        <div id="log" class="log"></div>
     </div>
 
     <script>
         const socket = io();
-        let currentPath = '/app/images';  // Default start path
+        const baseDir = {{ base_dir|tojson }};
+        let currentPath = baseDir;  // Default start path
         let folderSelected = false;
 
         // Browsing function
@@ -125,29 +147,51 @@
         function goBack() {
             const pathSegments = currentPath.split('/');
             pathSegments.pop();  // Remove the last directory segment
-            const newPath = pathSegments.join('/');
-            browse(newPath || '/app/images');
+            browse(pathSegments.join('/') || baseDir);
         }
 
         // Select the current folder
         function selectFolder() {
-            if (currentPath !== '') {  // Check if there's a valid path
-                document.getElementById('source_folder').value = currentPath;  // Set the form input to the current path
-                document.getElementById('select-folder-btn').classList.add('selected');
-                folderSelected = true;  // Mark folder as selected
-            } else {
-                alert('Please browse to a valid folder first.');
-            }
+            document.getElementById('source_folder').value = currentPath;  // Set the form input to the current path
+            document.getElementById('select-folder-btn').classList.add('selected');
+            folderSelected = true;  // Mark folder as selected
         }
 
-        // Show the loading spinner during processing
-        function showSpinner() {
-            document.querySelector('button[type="submit"]').textContent = 'Processing...';
-            document.getElementById('spinner').style.display = 'block';
+        function setRunning(running) {
+            const button = document.getElementById('submit-btn');
+            button.disabled = running;
+            button.textContent = running ? 'Processing...' : 'Process Images in Folder';
+            document.getElementById('spinner').style.display = running ? 'block' : 'none';
+        }
+
+        function appendLog(line) {
+            const log = document.getElementById('log');
+            log.style.display = 'block';
+            log.textContent += line + '\n';
+            log.scrollTop = log.scrollHeight;
+        }
+
+        // Start processing the selected folder
+        function startProcessing(event) {
+            event.preventDefault();
+            if (!folderSelected) {
+                alert('Please select a folder first.');
+                return;
+            }
+            document.getElementById('log').textContent = '';
+            document.getElementById('status').textContent = '';
+            socket.emit('process', {
+                source_folder: document.getElementById('source_folder').value,
+                threshold: document.getElementById('threshold').value,
+                modelbased: document.getElementById('modelbased').checked,
+                model_threshold: document.getElementById('model_threshold').value,
+                max_size: document.getElementById('max_size').value,
+            });
         }
 
         // Listen for the folder list
         socket.on('files', data => {
+            currentPath = data.path;
             const fileBrowser = document.getElementById('file-browser');
             fileBrowser.innerHTML = '';  // Clear previous file browser contents
 
@@ -170,11 +214,25 @@
             });
 
             // Back button to go to parent directory
-            const backButton = document.createElement('button');
-            backButton.textContent = 'Back';
-            backButton.className = 'back-button';
-            backButton.onclick = goBack;  // Go back one level
-            fileBrowser.appendChild(backButton);
+            if (!data.is_root) {
+                const backButton = document.createElement('button');
+                backButton.textContent = 'Back';
+                backButton.className = 'back-button';
+                backButton.onclick = goBack;  // Go back one level
+                fileBrowser.appendChild(backButton);
+            }
+        });
+
+        socket.on('status', data => setRunning(data.running));
+        socket.on('started', data => {
+            setRunning(true);
+            appendLog(`Processing ${data.source_folder}...`);
+        });
+        socket.on('progress', data => appendLog(data.line));
+        socket.on('done', data => {
+            setRunning(false);
+            document.getElementById('status').textContent = data.message;
+            appendLog(data.message);
         });
 
         socket.on('error', data => {
@@ -182,7 +240,7 @@
         });
 
         // Start browsing from the default folder
-        browse('/app/images');
+        browse(baseDir);
     </script>
 </body>
 </html>
