@@ -19,10 +19,12 @@ model, moving photos automatically) is kept on the [`v1` branch](../../tree/v1).
    - Moved photos go to a `Blurry` folder in the same folder as the photo. Files that belong to the photo
      move with it: iPhone Live Photo videos (`.MOV`), edit sidecars (`.AAE`), RAW files from RAW+JPEG
      shooting and `.xmp` files. Existing files are never overwritten.
+   - Every Move/Keep click is saved right away, so you can stop in the middle of a review and continue
+     later; only *Apply* moves files.
    - *Undo last apply* puts the last batch back, including the photos you marked Keep.
    - Photos you keep are remembered and not shown again.
    - The magnifier opens a large view. Click the photo to see it at 100 % (one photo pixel per screen
-     pixel) centred on where you clicked, drag to pan, click again to fit. HEIC and TIFF are converted
+     pixel) centred on where you clicked, drag to pan, click again to fit. Previous/next stays at 100 % on the same spot. HEIC and TIFF are converted
      on the fly. Keys: ← → previous/next, M move, K keep, Z 100 %/fit, Esc close.
 
 The score finds the candidates and you verify them: the same two-step idea as version 1, where the DCT

@@ -135,3 +135,19 @@ def test_random_sample_and_label_export(lib):
     exported = {r['path']: (r['label'], r['mode']) for r in library.export_labels(conn)}
     assert exported == {'Blurry/blurry.jpg': ('blurry', 'random'), 'sharp.jpg': ('sharp', 'random')}
     assert library.last_batch(conn)['moved'] == 1 and library.last_batch(conn)['kept'] == 1
+
+
+def test_drafts_survive_until_applied(lib):
+    conn, root = lib
+    library.scan(conn, root, log=lambda m: None)
+    library.save_drafts(conn, {'blurry.jpg': False, 'trip/IMG_0001.JPG': True})
+    library.save_drafts(conn, {'blurry.jpg': True})  # changed my mind
+    assert library.draft_count(conn) == 2
+
+    _, rows = library.candidates(conn, '', scoring.DEFAULT_THRESHOLD)
+    assert {r['path']: r['draft'] for r in rows} == {'blurry.jpg': 1, 'trip/IMG_0001.JPG': 1}
+    _, rows = library.candidates(conn, '', None, random_order=True, limit=2)
+    assert {r['path'] for r in rows} == {'blurry.jpg', 'trip/IMG_0001.JPG'}  # drafts come first
+
+    library.apply_review(conn, root, move=['blurry.jpg'], keep=['trip/IMG_0001.JPG'])
+    assert library.draft_count(conn) == 0

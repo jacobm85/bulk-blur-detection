@@ -42,6 +42,12 @@ CREATE TABLE IF NOT EXISTS reviews (
     reviewed_at TEXT, undone_at TEXT
 );
 CREATE INDEX IF NOT EXISTS reviews_batch ON reviews(batch);
+-- Decisions made on the review page but not applied yet, so a review can be continued later
+CREATE TABLE IF NOT EXISTS drafts (
+    path TEXT PRIMARY KEY,
+    move INTEGER,        -- 1 = Move, 0 = Keep
+    updated_at TEXT
+);
 CREATE TABLE IF NOT EXISTS moves (
     id INTEGER PRIMARY KEY,
     batch TEXT, src TEXT, dst TEXT, image TEXT,  -- image = path of the photo this file belongs to
@@ -117,6 +123,7 @@ def scan(conn, root, folder='', workers=None, log=print):
     gone = [p for p in known if p not in seen and f'/{BLURRY_FOLDER_NAME}/' not in f'/{p}'
             and not os.path.exists(to_abs(root, p))]
     conn.executemany('DELETE FROM images WHERE path = ?', [(p,) for p in gone])
+    conn.executemany('DELETE FROM drafts WHERE path = ?', [(p,) for p in gone])
     conn.commit()
     if gone:
         log(f'[scan] {len(gone)} images no longer exist and were removed from the database')
@@ -167,8 +174,10 @@ def candidates(conn, folder='', threshold=None, camera=None, include_reviewed=Fa
     if not include_reviewed:
         where += ' AND label IS NULL'
     total = conn.execute(f'SELECT COUNT(*) FROM images WHERE {where}', params).fetchone()[0]
-    order = 'random()' if random_order else 'score'
-    rows = conn.execute(f'SELECT * FROM images WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?',
+    # A random sample starts with the photos that have unapplied decisions, so a review can be resumed
+    order = 'd.path IS NULL, random()' if random_order else 'score'
+    rows = conn.execute(f'SELECT images.*, d.move AS draft FROM images LEFT JOIN drafts d USING (path) '
+                        f'WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?',
                         params + [limit, 0 if random_order else offset]).fetchall()
     return total, [dict(r) for r in rows]
 
@@ -250,6 +259,18 @@ def move_group(files, dst_folder):
     return moved
 
 
+def save_drafts(conn, decisions):
+    """Store unapplied review decisions ({path: True for Move, False for Keep})."""
+    conn.executemany('INSERT INTO drafts (path, move, updated_at) VALUES (?, ?, ?) '
+                     'ON CONFLICT(path) DO UPDATE SET move = excluded.move, updated_at = excluded.updated_at',
+                     [(path, int(bool(move)), now()) for path, move in decisions.items()])
+    conn.commit()
+
+
+def draft_count(conn):
+    return conn.execute('SELECT COUNT(*) FROM drafts').fetchone()[0]
+
+
 def current_label(conn, rel):
     row = conn.execute('SELECT label FROM images WHERE path = ?', (rel,)).fetchone()
     return row['label'] if row else None
@@ -274,9 +295,11 @@ def apply_review(conn, root, move=(), keep=(), mode='threshold'):
                          [(batch, to_rel(root, s), to_rel(root, d), new_rel, now()) for s, d in pairs])
         conn.execute("INSERT INTO reviews (batch, image, label, prev_label, mode, reviewed_at) "
                      "VALUES (?, ?, 'blurry', ?, ?, ?)", (batch, new_rel, prev, mode, now()))
+        conn.execute('DELETE FROM drafts WHERE path = ?', (rel,))
         conn.commit()
         moved += 1
     for rel in keep:
+        conn.execute('DELETE FROM drafts WHERE path = ?', (rel,))
         prev = current_label(conn, rel)
         conn.execute("UPDATE images SET label = 'sharp' WHERE path = ?", (rel,))
         conn.execute("INSERT INTO reviews (batch, image, label, prev_label, mode, reviewed_at) "

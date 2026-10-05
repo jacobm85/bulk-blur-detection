@@ -109,6 +109,7 @@ def api_stats():
     labelled = conn.execute("SELECT COUNT(*), SUM(label = 'blurry') FROM images WHERE label IS NOT NULL").fetchone()
     return jsonify({**library.stats(conn, rel_folder(request.args.get('folder'))),
                     'labelled': labelled[0], 'labelled_blurry': labelled[1] or 0,
+                    'drafts': library.draft_count(conn),
                     'recommendations': library.recommend_thresholds(conn),
                     'last_batch': library.last_batch(conn)})
 
@@ -155,6 +156,18 @@ def checked_paths(paths):
             abort(400, f'Not a file inside the images folder: {rel}')
         result.append(library.to_rel(BASE_DIR, full))
     return result
+
+
+@app.route('/api/drafts', methods=['POST'])
+def api_drafts():
+    """Save review decisions as they are made, so a review can be continued later."""
+    decisions = request.get_json(force=True).get('decisions', {})
+    if not isinstance(decisions, dict):
+        abort(400, 'decisions must be an object')
+    paths = checked_paths(list(decisions))
+    conn = db()
+    library.save_drafts(conn, {rel: bool(move) for rel, move in zip(paths, decisions.values())})
+    return jsonify({'saved': len(paths), 'drafts': library.draft_count(conn)})
 
 
 @app.route('/api/apply', methods=['POST'])

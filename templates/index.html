@@ -124,6 +124,7 @@
             <button class="secondary" onclick="markAll(false)">Mark all Keep</button>
             <button id="apply-btn" onclick="applyReview()">Apply</button>
         </div>
+        <div class="muted" id="draft-info" style="margin-top:8px"></div>
         <div class="row" style="margin-top:12px">
             <button class="secondary" id="undo-btn" onclick="undoLast()" hidden>Undo last move</button>
             <span id="review-status" class="muted"></span>
@@ -243,6 +244,7 @@
             : '<p class="muted">Per-camera threshold suggestions appear once you have reviewed about 40 photos ' +
               'from a camera (at least 10 kept and 10 moved).</p>';
 
+        showDraftCount(s.drafts);
         const undo = $('undo-btn');
         undo.hidden = !s.last_batch;
         if (s.last_batch) undo.textContent = `Undo last apply (${s.last_batch.moved} moved, ${s.last_batch.kept} kept)`;
@@ -279,8 +281,10 @@
             return;
         }
         photos = result.images;
-        // Below the threshold most photos are blurry, in a random sample most are sharp
-        decisions = Object.fromEntries(photos.map(p => [p.path, random ? p.label === 'blurry' : p.label !== 'sharp']));
+        // Saved (unapplied) decisions win; otherwise: below the threshold most photos are blurry,
+        // in a random sample most are sharp
+        decisions = Object.fromEntries(photos.map(p => [p.path, p.draft !== null && p.draft !== undefined
+            ? Boolean(p.draft) : random ? p.label === 'blurry' : p.label !== 'sharp']));
         if (random) {
             $('candidate-info').textContent = result.total
                 ? `Showing ${photos.length} random photos out of ${result.total} not yet reviewed.`
@@ -309,6 +313,7 @@
                 </div>`;
             card.onclick = () => {
                 decisions[p.path] = !decisions[p.path];
+                saveDecisions([p.path]);
                 renderGrid();
             };
             card.querySelector('.zoom').onclick = event => {
@@ -324,7 +329,27 @@
 
     function markAll(move) {
         photos.forEach(p => decisions[p.path] = move);
+        saveDecisions(photos.map(p => p.path));
         renderGrid();
+    }
+
+    // Decisions are saved as drafts right away, so a review survives a reload; Apply moves the files
+    async function saveDecisions(paths) {
+        try {
+            const r = await api('/api/drafts', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ decisions: Object.fromEntries(paths.map(path => [path, decisions[path]])) }),
+            });
+            showDraftCount(r.drafts);
+        } catch (e) {
+            $('draft-info').textContent = `Could not save decision: ${e.message}`;
+        }
+    }
+
+    function showDraftCount(count) {
+        $('draft-info').textContent = count
+            ? `${count} decisions saved, not applied yet. Nothing is moved until you press Apply.`
+            : '';
     }
 
     // ---- Large viewer: fit to screen, or 100 % (one photo pixel per screen pixel) to check focus ----
@@ -334,7 +359,8 @@
 
     function showLarge(p) { openViewer(photos.indexOf(p)); }
 
-    function openViewer(index) {
+    // zoomAt: [fx, fy] to open straight at 100 % centred on that point of the photo
+    function openViewer(index, zoomAt = null) {
         viewIndex = index;
         const p = photos[index];
         const img = $('viewer-img');
@@ -346,9 +372,20 @@
             $('viewer-status').textContent = '';
         };
         $('viewer-status').textContent = 'Loading…';
-        img.src = `/thumb?path=${enc(p.path)}&size=1600&v=${p.mtime}`;
         $('overlay').hidden = false;
         updateViewer();
+        if (zoomAt) {
+            zoomTo(...zoomAt);
+        } else {
+            img.src = `/thumb?path=${enc(p.path)}&size=1600&v=${p.mtime}`;
+        }
+    }
+
+    // The point of the photo (as fractions) at the centre of the screen
+    function viewCentre() {
+        const img = $('viewer-img'), viewer = $('viewer');
+        return [Math.min(Math.max((viewer.scrollLeft + viewer.clientWidth / 2) / img.offsetWidth, 0), 1),
+                Math.min(Math.max((viewer.scrollTop + viewer.clientHeight / 2) / img.offsetHeight, 0), 1)];
     }
 
     function updateViewer() {
@@ -369,13 +406,15 @@
     }
 
     function setDecision(move) {
-        decisions[photos[viewIndex].path] = move;
+        const path = photos[viewIndex].path;
+        decisions[path] = move;
+        saveDecisions([path]);
         updateViewer();
     }
 
     function step(delta) {
         const index = viewIndex + delta;
-        if (index >= 0 && index < photos.length) openViewer(index);
+        if (index >= 0 && index < photos.length) openViewer(index, zoomed ? viewCentre() : null);
     }
 
     function setFit() {
