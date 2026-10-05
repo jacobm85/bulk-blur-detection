@@ -21,6 +21,9 @@ model, moving photos automatically) is kept on the [`v1` branch](../../tree/v1).
      shooting and `.xmp` files. Existing files are never overwritten.
    - *Undo last apply* puts the last batch back, including the photos you marked Keep.
    - Photos you keep are remembered and not shown again.
+   - The magnifier opens a large view. Click the photo to see it at 100 % (one photo pixel per screen
+     pixel) centred on where you clicked, drag to pan, click again to fit. HEIC and TIFF are converted
+     on the fly. Keys: ← → previous/next, M move, K keep, Z 100 %/fit, Esc close.
 
 The score finds the candidates and you verify them: the same two-step idea as version 1, where the DCT
 model double-checked the Laplacian result, but with a person as the second step. Measured on the CERTH

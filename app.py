@@ -208,5 +208,34 @@ def thumb():
     return response
 
 
+# Formats every browser shows natively (including EXIF orientation); others are converted to JPEG
+BROWSER_FORMATS = {'.jpg', '.jpeg', '.png', '.webp', '.bmp'}
+
+
+def render_full(path):
+    with Image.open(path) as img:
+        img = ImageOps.exif_transpose(img).convert('RGB')
+        buf = io.BytesIO()
+        img.save(buf, 'JPEG', quality=92)
+    return buf.getvalue()
+
+
+@app.route('/original')
+def original():
+    """The photo in full resolution, for checking focus at 100 %."""
+    path = resolve(request.args.get('path'))
+    if path is None or not os.path.isfile(path) or not scoring.is_image(path):
+        abort(404)
+    if os.path.splitext(path)[1].lower() in BROWSER_FORMATS:
+        return send_file(path, conditional=True, max_age=86400)
+    try:
+        data = tpool.execute(render_full, path)
+    except Exception:  # noqa: BLE001 -- unreadable file
+        abort(415)
+    response = send_file(io.BytesIO(data), mimetype='image/jpeg')
+    response.headers['Cache-Control'] = 'private, max-age=86400'
+    return response
+
+
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000)

@@ -51,10 +51,19 @@
         .card.keep .badge { background: var(--keep); }
         .zoom { position: absolute; top: 6px; right: 6px; background: rgba(0,0,0,0.6); color: #fff;
                 border-radius: 4px; padding: 2px 8px; font-size: 0.8rem; }
-        .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.9); display: none; align-items: center;
-                   justify-content: center; z-index: 10; cursor: zoom-out; }
-        .overlay img { max-width: 96vw; max-height: 92vh; }
-        .overlay .caption { position: absolute; bottom: 10px; color: #ddd; font-size: 0.9rem; }
+        .overlay { position: fixed; inset: 0; background: #111; z-index: 10; display: flex; flex-direction: column; }
+        .viewer { flex: 1; min-height: 0; overflow: auto; display: flex; align-items: center; justify-content: center;
+                  user-select: none; }
+        .viewer img { cursor: zoom-in; }
+        .viewer img.fit { max-width: 100%; max-height: 100%; }
+        .viewer.zoomed { display: block; }
+        .viewer.zoomed img { max-width: none; max-height: none; display: block; margin: auto; cursor: grab; }
+        .viewer-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px;
+                      background: #1d1d1d; color: #ddd; font-size: 0.85rem; }
+        .viewer-bar .spacer { flex: 1; }
+        .choice { background: #444; }
+        .choice.move.active { background: var(--move); }
+        .choice.keep.active { background: var(--keep); }
     </style>
 </head>
 <body>
@@ -122,9 +131,19 @@
     </div>
 </div>
 
-<div class="overlay" id="overlay" onclick="this.style.display='none'">
-    <img id="overlay-img" alt="">
-    <div class="caption" id="overlay-caption"></div>
+<div class="overlay" id="overlay" hidden>
+    <div class="viewer" id="viewer"><img id="viewer-img" class="fit" alt=""></div>
+    <div class="viewer-bar">
+        <button class="secondary" onclick="step(-1)">&larr; Prev</button>
+        <button class="secondary" onclick="step(1)">Next &rarr;</button>
+        <button class="choice move" id="viewer-move" onclick="setDecision(true)">Move (M)</button>
+        <button class="choice keep" id="viewer-keep" onclick="setDecision(false)">Keep (K)</button>
+        <button class="secondary" id="viewer-zoom" onclick="toggleZoom()">100% (Z)</button>
+        <span id="viewer-caption"></span>
+        <span id="viewer-status"></span>
+        <span class="spacer"></span>
+        <button class="secondary" onclick="closeViewer()">Close (Esc)</button>
+    </div>
 </div>
 
 <script>
@@ -308,11 +327,139 @@
         renderGrid();
     }
 
-    function showLarge(p) {
-        $('overlay-img').src = `/thumb?path=${enc(p.path)}&size=1600&v=${p.mtime}`;
-        $('overlay-caption').textContent = `${p.path} · score ${Math.round(p.score)} · ${p.camera || 'unknown camera'}`;
-        $('overlay').style.display = 'flex';
+    // ---- Large viewer: fit to screen, or 100 % (one photo pixel per screen pixel) to check focus ----
+    let viewIndex = -1;
+    let zoomed = false;
+    let drag = null;
+
+    function showLarge(p) { openViewer(photos.indexOf(p)); }
+
+    function openViewer(index) {
+        viewIndex = index;
+        const p = photos[index];
+        const img = $('viewer-img');
+        setFit();
+        // Hide the previous photo until the new one has loaded, so it never flashes up
+        img.style.visibility = 'hidden';
+        img.onload = () => {
+            img.style.visibility = '';
+            $('viewer-status').textContent = '';
+        };
+        $('viewer-status').textContent = 'Loading…';
+        img.src = `/thumb?path=${enc(p.path)}&size=1600&v=${p.mtime}`;
+        $('overlay').hidden = false;
+        updateViewer();
     }
+
+    function updateViewer() {
+        const p = photos[viewIndex];
+        const move = decisions[p.path];
+        $('viewer-caption').textContent = `${viewIndex + 1}/${photos.length} · ${p.path} · ${p.width}×${p.height} · ` +
+            `score ${Math.round(p.score)} · ${p.camera || 'unknown camera'}`;
+        $('viewer-move').classList.toggle('active', move);
+        $('viewer-keep').classList.toggle('active', !move);
+        $('viewer-zoom').textContent = zoomed ? 'Fit (Z)' : '100% (Z)';
+    }
+
+    function closeViewer() {
+        $('overlay').hidden = true;
+        $('viewer-img').removeAttribute('src');  // free the full-resolution image
+        viewIndex = -1;
+        renderGrid();  // show decisions made in the viewer
+    }
+
+    function setDecision(move) {
+        decisions[photos[viewIndex].path] = move;
+        updateViewer();
+    }
+
+    function step(delta) {
+        const index = viewIndex + delta;
+        if (index >= 0 && index < photos.length) openViewer(index);
+    }
+
+    function setFit() {
+        const img = $('viewer-img');
+        img.className = 'fit';
+        img.style.width = img.style.height = '';
+        $('viewer').classList.remove('zoomed');
+        zoomed = false;
+    }
+
+    // Show the original at 100 %, centred on the point (fx, fy) of the photo, given as fractions
+    function zoomTo(fx, fy) {
+        const p = photos[viewIndex];
+        const full = new Image();
+        $('viewer-status').textContent = 'Loading full resolution…';
+        full.onload = () => {
+            if (photos[viewIndex] !== p) return;  // moved on to another photo meanwhile
+            const img = $('viewer-img');
+            const viewer = $('viewer');
+            img.src = full.src;
+            img.className = '';
+            img.style.width = `${full.naturalWidth / devicePixelRatio}px`;
+            img.style.height = `${full.naturalHeight / devicePixelRatio}px`;
+            viewer.classList.add('zoomed');
+            zoomed = true;
+            viewer.scrollLeft = fx * img.offsetWidth - viewer.clientWidth / 2;
+            viewer.scrollTop = fy * img.offsetHeight - viewer.clientHeight / 2;
+            $('viewer-status').textContent = '';
+            updateViewer();
+        };
+        full.onerror = () => $('viewer-status').textContent = 'Could not load the original.';
+        full.src = `/original?path=${enc(p.path)}&v=${p.mtime}`;
+    }
+
+    function toggleZoom(fx = 0.5, fy = 0.5) {
+        if (zoomed) {
+            setFit();
+            updateViewer();
+        } else {
+            zoomTo(fx, fy);
+        }
+    }
+
+    // Drag to pan at 100 %; a click (no drag) on the photo toggles zoom, on the background closes
+    $('viewer').addEventListener('mousedown', event => {
+        if (event.button !== 0) return;
+        const viewer = $('viewer');
+        drag = { x: event.clientX, y: event.clientY, left: viewer.scrollLeft, top: viewer.scrollTop, moved: false };
+        event.preventDefault();
+    });
+    window.addEventListener('mousemove', event => {
+        if (!drag) return;
+        const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
+        if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+        if (zoomed) {
+            $('viewer').scrollLeft = drag.left - dx;
+            $('viewer').scrollTop = drag.top - dy;
+        }
+    });
+    window.addEventListener('mouseup', event => {
+        if (!drag) return;
+        const wasClick = !drag.moved;
+        drag = null;
+        if (!wasClick) return;
+        const img = $('viewer-img');
+        if (event.target !== img) {
+            if (!zoomed) closeViewer();
+            return;
+        }
+        const rect = img.getBoundingClientRect();
+        toggleZoom((event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height);
+    });
+    document.addEventListener('keydown', event => {
+        if ($('overlay').hidden) return;
+        const actions = {
+            escape: closeViewer, arrowright: () => step(1), arrowleft: () => step(-1),
+            m: () => setDecision(true), k: () => setDecision(false), z: () => toggleZoom(),
+        };
+        const action = actions[event.key.toLowerCase()];
+        if (action) {
+            event.preventDefault();
+            action();
+        }
+    });
 
     async function applyReview() {
         const move = photos.filter(p => decisions[p.path]).map(p => p.path);
