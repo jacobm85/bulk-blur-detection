@@ -1,6 +1,7 @@
 import eventlet
 eventlet.monkey_patch()  # Must run before other imports
 
+import csv
 import io
 import os
 import sys
@@ -105,7 +106,9 @@ def on_connect():
 @app.route('/api/stats')
 def api_stats():
     conn = db()
+    labelled = conn.execute("SELECT COUNT(*), SUM(label = 'blurry') FROM images WHERE label IS NOT NULL").fetchone()
     return jsonify({**library.stats(conn, rel_folder(request.args.get('folder'))),
+                    'labelled': labelled[0], 'labelled_blurry': labelled[1] or 0,
                     'recommendations': library.recommend_thresholds(conn),
                     'last_batch': library.last_batch(conn)})
 
@@ -118,14 +121,30 @@ def api_candidates():
     except ValueError:
         abort(400, 'Invalid threshold or offset')
     conn = db()
+    random_sample = request.args.get('mode') == 'random'
     per_camera = None
-    if request.args.get('per_camera') == '1':
+    if request.args.get('per_camera') == '1' and not random_sample:
         per_camera = {c: r['threshold'] for c, r in library.recommend_thresholds(conn).items()}
-    total, rows = library.candidates(conn, rel_folder(request.args.get('folder')), threshold,
+    total, rows = library.candidates(conn, rel_folder(request.args.get('folder')),
+                                     None if random_sample else threshold,
                                      request.args.get('camera') or None,
                                      include_reviewed=request.args.get('reviewed') == '1',
-                                     limit=PAGE_SIZE, offset=offset, camera_thresholds=per_camera)
+                                     limit=PAGE_SIZE, offset=offset, camera_thresholds=per_camera,
+                                     random_order=random_sample)
     return jsonify({'total': total, 'images': rows})
+
+
+@app.route('/api/labels.csv')
+def api_labels():
+    rows = library.export_labels(db())
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(rows[0].keys() if rows else ['path', 'label'])
+    writer.writerows(tuple(r) for r in rows)
+    response = send_file(io.BytesIO(out.getvalue().encode('utf-8')), mimetype='text/csv',
+                         as_attachment=True, download_name='blur-labels.csv')
+    response.headers['Cache-Control'] = 'no-store'
+    return response
 
 
 def checked_paths(paths):
@@ -144,8 +163,9 @@ def api_apply():
         abort(409, 'Wait until the scan has finished')
     data = request.get_json(force=True)
     move, keep = checked_paths(data.get('move', [])), checked_paths(data.get('keep', []))
+    mode = 'random' if data.get('mode') == 'random' else 'threshold'
     # SQLite connections can't cross threads, so the worker thread opens its own
-    batch, moved, errors = tpool.execute(lambda: library.apply_review(db(), BASE_DIR, move, keep))
+    batch, moved, errors = tpool.execute(lambda: library.apply_review(db(), BASE_DIR, move, keep, mode))
     return jsonify({'batch': batch, 'moved': moved, 'kept': len(keep), 'errors': errors})
 
 

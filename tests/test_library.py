@@ -93,7 +93,9 @@ def test_move_with_companions_and_undo(lib):
 
     assert library.last_batch(conn)['batch'] == batch
     restored, errors = library.undo(conn, root, batch)
-    assert (restored, errors) == (1, [])
+    assert (restored, errors) == (2, [])  # the moved photo and the kept one
+    labels = dict(conn.execute('SELECT path, label FROM images').fetchall())
+    assert labels['trip/IMG_0001.JPG'] is None and labels['blurry.jpg'] is None
     assert sorted(os.listdir(os.path.join(root, 'trip'))) == ['Blurry', 'IMG_0001.AAE', 'IMG_0001.JPG',
                                                                 'IMG_0001.MOV', 'IMG_0002.jpg']
     assert os.listdir(blurry_dir) == ['IMG_0001.MOV']
@@ -121,3 +123,15 @@ def test_recommend_thresholds_per_camera(lib):
 
     total, _ = library.candidates(conn, '', 100, camera_thresholds={'iPhone 13': 150}, include_reviewed=True)
     assert total == 15 + 10  # iPhone below 150, X-S10 below the default 100
+
+
+def test_random_sample_and_label_export(lib):
+    conn, root = lib
+    library.scan(conn, root, log=lambda m: None)
+    total, rows = library.candidates(conn, '', None, random_order=True, limit=10)
+    assert total == 4 and len(rows) == 4  # all scores, not just below the threshold
+
+    library.apply_review(conn, root, move=['blurry.jpg'], keep=['sharp.jpg'], mode='random')
+    exported = {r['path']: (r['label'], r['mode']) for r in library.export_labels(conn)}
+    assert exported == {'Blurry/blurry.jpg': ('blurry', 'random'), 'sharp.jpg': ('sharp', 'random')}
+    assert library.last_batch(conn)['moved'] == 1 and library.last_batch(conn)['kept'] == 1

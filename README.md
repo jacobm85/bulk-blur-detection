@@ -19,8 +19,19 @@ model, moving photos automatically) is kept on the [`v1` branch](../../tree/v1).
    - Moved photos go to a `Blurry` folder in the same folder as the photo. Files that belong to the photo
      move with it: iPhone Live Photo videos (`.MOV`), edit sidecars (`.AAE`), RAW files from RAW+JPEG
      shooting and `.xmp` files. Existing files are never overwritten.
-   - *Undo last move* puts the last batch back.
+   - *Undo last apply* puts the last batch back, including the photos you marked Keep.
    - Photos you keep are remembered and not shown again.
+
+The score finds the candidates and you verify them: the same two-step idea as version 1, where the DCT
+model double-checked the Laplacian result, but with a person as the second step. Measured on the CERTH
+dataset, the DCT model removed only 3 of 46 wrongly flagged photos while taking about 2 s per photo.
+
+### Collecting training data
+Every Move/Keep decision is stored and can be downloaded as *labels (CSV)* from the Scan section, to
+train a better model later. Reviewing only photos below the threshold never shows blurry photos the
+score missed, so also use the review mode **Random sample (training data)** now and then: it shows
+random photos of any score, all marked Keep, and you mark the blurry ones. The CSV records which mode
+each decision came from.
 
 Supported formats: JPEG, HEIC/HEIF (iPhone), PNG, TIFF, WebP, BMP. NAS system folders such as `@eaDir`
 and `#recycle` are skipped.

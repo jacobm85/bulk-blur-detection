@@ -34,6 +34,14 @@ CREATE TABLE IF NOT EXISTS images (
     label TEXT,          -- NULL = not reviewed, 'sharp' = kept after review, 'blurry' = moved
     scored_at TEXT
 );
+-- Every review decision, so an apply can be undone completely and training data can account for
+-- how photos were picked for review ('threshold' = below the threshold, 'random' = random sample)
+CREATE TABLE IF NOT EXISTS reviews (
+    id INTEGER PRIMARY KEY,
+    batch TEXT, image TEXT, label TEXT, prev_label TEXT, mode TEXT,
+    reviewed_at TEXT, undone_at TEXT
+);
+CREATE INDEX IF NOT EXISTS reviews_batch ON reviews(batch);
 CREATE TABLE IF NOT EXISTS moves (
     id INTEGER PRIMARY KEY,
     batch TEXT, src TEXT, dst TEXT, image TEXT,  -- image = path of the photo this file belongs to
@@ -137,9 +145,10 @@ def scan(conn, root, folder='', workers=None, log=print):
 
 
 def candidates(conn, folder='', threshold=None, camera=None, include_reviewed=False, limit=60, offset=0,
-               camera_thresholds=None):
+               camera_thresholds=None, random_order=False):
     """Unreviewed images below threshold in folder, blurriest first, plus the total count.
-    camera_thresholds ({camera: threshold}) overrides threshold for those cameras."""
+    camera_thresholds ({camera: threshold}) overrides threshold for those cameras.
+    random_order returns a random sample instead (use threshold=None to sample all scores)."""
     where, params = in_folder_sql(folder)
     where += f" AND error IS NULL AND '/' || path NOT LIKE '%/{BLURRY_FOLDER_NAME}/%'"
     if threshold is not None and camera_thresholds:
@@ -158,8 +167,9 @@ def candidates(conn, folder='', threshold=None, camera=None, include_reviewed=Fa
     if not include_reviewed:
         where += ' AND label IS NULL'
     total = conn.execute(f'SELECT COUNT(*) FROM images WHERE {where}', params).fetchone()[0]
-    rows = conn.execute(f'SELECT * FROM images WHERE {where} ORDER BY score LIMIT ? OFFSET ?',
-                        params + [limit, offset]).fetchall()
+    order = 'random()' if random_order else 'score'
+    rows = conn.execute(f'SELECT * FROM images WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?',
+                        params + [limit, 0 if random_order else offset]).fetchall()
     return total, [dict(r) for r in rows]
 
 
@@ -240,12 +250,19 @@ def move_group(files, dst_folder):
     return moved
 
 
-def apply_review(conn, root, move=(), keep=()):
+def current_label(conn, rel):
+    row = conn.execute('SELECT label FROM images WHERE path = ?', (rel,)).fetchone()
+    return row['label'] if row else None
+
+
+def apply_review(conn, root, move=(), keep=(), mode='threshold'):
     """Move the photos in `move` (with companions) to a Blurry folder next to them and label them
-    blurry; label the photos in `keep` as sharp. Returns (batch id, number moved, errors)."""
+    blurry; label the photos in `keep` as sharp. `mode` records how the photos were picked for
+    review. Returns (batch id, number moved, errors)."""
     batch, moved, errors = uuid.uuid4().hex[:12], 0, []
     for rel in move:
         src = to_abs(root, rel)
+        prev = current_label(conn, rel)
         try:
             pairs = move_group([src] + companions(src), os.path.join(os.path.dirname(src), BLURRY_FOLDER_NAME))
         except OSError as e:
@@ -255,21 +272,29 @@ def apply_review(conn, root, move=(), keep=()):
         conn.execute("UPDATE images SET path = ?, label = 'blurry' WHERE path = ?", (new_rel, rel))
         conn.executemany('INSERT INTO moves (batch, src, dst, image, moved_at) VALUES (?, ?, ?, ?, ?)',
                          [(batch, to_rel(root, s), to_rel(root, d), new_rel, now()) for s, d in pairs])
+        conn.execute("INSERT INTO reviews (batch, image, label, prev_label, mode, reviewed_at) "
+                     "VALUES (?, ?, 'blurry', ?, ?, ?)", (batch, new_rel, prev, mode, now()))
         conn.commit()
         moved += 1
-    conn.executemany("UPDATE images SET label = 'sharp' WHERE path = ?", [(rel,) for rel in keep])
+    for rel in keep:
+        prev = current_label(conn, rel)
+        conn.execute("UPDATE images SET label = 'sharp' WHERE path = ?", (rel,))
+        conn.execute("INSERT INTO reviews (batch, image, label, prev_label, mode, reviewed_at) "
+                     "VALUES (?, ?, 'sharp', ?, ?, ?)", (batch, rel, prev, mode, now()))
     conn.commit()
     return batch, moved, errors
 
 
 def last_batch(conn):
-    row = conn.execute('SELECT batch, COUNT(DISTINCT image) AS images, MAX(moved_at) AS moved_at FROM moves '
-                       'WHERE undone_at IS NULL GROUP BY batch ORDER BY MAX(id) DESC LIMIT 1').fetchone()
+    row = conn.execute("SELECT batch, SUM(label = 'blurry') AS moved, SUM(label = 'sharp') AS kept, "
+                       "MAX(reviewed_at) AS reviewed_at FROM reviews WHERE undone_at IS NULL "
+                       "GROUP BY batch ORDER BY MAX(id) DESC LIMIT 1").fetchone()
     return dict(row) if row else None
 
 
 def undo(conn, root, batch):
-    """Move every file of a batch back to where it came from. Returns (restored photos, errors)."""
+    """Undo an apply: move every file of the batch back to where it came from and reset the labels
+    of the photos that were kept. Returns (restored photos, errors)."""
     errors, restored = [], set()
     for m in conn.execute('SELECT * FROM moves WHERE batch = ? AND undone_at IS NULL ORDER BY id', (batch,)).fetchall():
         src, dst = to_abs(root, m['src']), to_abs(root, m['dst'])
@@ -284,13 +309,34 @@ def undo(conn, root, batch):
             continue
         conn.execute('UPDATE moves SET undone_at = ? WHERE id = ?', (now(), m['id']))
         if m['dst'] == m['image']:
-            conn.execute('UPDATE images SET path = ?, label = NULL WHERE path = ?', (m['src'], m['image']))
-            restored.add(m['image'])
+            conn.execute('UPDATE images SET path = ? WHERE path = ?', (m['src'], m['image']))
         conn.commit()
         folder = os.path.dirname(dst)
         if os.path.basename(folder) == BLURRY_FOLDER_NAME and not os.listdir(folder):
             os.rmdir(folder)  # don't leave empty Blurry folders behind
+
+    for r in conn.execute('SELECT * FROM reviews WHERE batch = ? AND undone_at IS NULL', (batch,)).fetchall():
+        if r['label'] == 'sharp':
+            conn.execute('UPDATE images SET label = ? WHERE path = ?', (r['prev_label'], r['image']))
+        else:
+            moved_back = conn.execute('SELECT src FROM moves WHERE batch = ? AND dst = ? AND undone_at IS NOT NULL',
+                                      (batch, r['image'])).fetchone()
+            if moved_back is None:
+                continue  # the move back failed; leave it so undo can be retried
+            conn.execute('UPDATE images SET label = ? WHERE path = ?', (r['prev_label'], moved_back['src']))
+        restored.add(r['image'])
+        conn.execute('UPDATE reviews SET undone_at = ? WHERE id = ?', (now(), r['id']))
+    conn.commit()
     return len(restored), errors
+
+
+def export_labels(conn):
+    """All reviewed photos with their label, score and EXIF, for training a model."""
+    return conn.execute(
+        "SELECT i.path, i.label, i.score, i.global_score, i.camera, i.taken, i.exposure, i.fnumber, i.iso, "
+        "i.focal, i.width, i.height, r.mode, r.reviewed_at FROM images i "
+        "LEFT JOIN reviews r ON r.id = (SELECT MAX(id) FROM reviews WHERE image = i.path AND undone_at IS NULL) "
+        "WHERE i.label IS NOT NULL ORDER BY r.reviewed_at").fetchall()
 
 
 def main():

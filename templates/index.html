@@ -11,6 +11,7 @@
             --accent: #2f6fde; --move: #d64541; --keep: #2e9d57;
         }
         * { box-sizing: border-box; }
+        [hidden] { display: none !important; }
         body { font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif; margin: 0;
                background: var(--bg); color: var(--text); }
         .container { max-width: 1400px; margin: 0 auto; padding: 16px; }
@@ -80,15 +81,24 @@
         </div>
         <div id="log" class="log"></div>
         <div id="stats" class="muted" style="margin-top:10px"></div>
+        <div id="labels" class="muted" style="margin-top:4px"></div>
     </div>
 
     <div class="panel">
         <h2>3. Review</h2>
-        <p class="muted">Photos below the threshold are shown blurriest first. Lower score = blurrier.
-            Everything is marked <b style="color:var(--move)">Move</b>; click the photos you want to
-            <b style="color:var(--keep)">Keep</b>, then apply. Moved photos (with Live Photo videos, RAW files
-            and sidecars) go to a <code>Blurry</code> folder next to them, and can be undone.</p>
+        <p class="muted" id="mode-help-threshold">Photos below the threshold are shown blurriest first. Lower
+            score = blurrier. Everything is marked <b style="color:var(--move)">Move</b>; click the photos you
+            want to <b style="color:var(--keep)">Keep</b>, then apply. Moved photos (with Live Photo videos, RAW
+            files and sidecars) go to a <code>Blurry</code> folder next to them, and can be undone.</p>
+        <p class="muted" id="mode-help-random" hidden>A random sample of photos with any score, to collect
+            training data that also covers blurry photos the score misses. Everything is marked
+            <b style="color:var(--keep)">Keep</b>; click the blurry ones to <b style="color:var(--move)">Move</b>
+            them, then apply.</p>
         <div class="row">
+            <select id="mode" onchange="modeChanged()">
+                <option value="threshold">Below threshold, blurriest first</option>
+                <option value="random">Random sample (training data)</option>
+            </select>
             <label>Threshold <input type="number" id="threshold" value="{{ default_threshold }}" min="0" step="10"></label>
             <label><input type="checkbox" id="per-camera"> Per-camera thresholds</label>
             <select id="camera"><option value="">All cameras</option></select>
@@ -206,7 +216,7 @@
         select.value = selected;
 
         const cams = Object.entries(recommendations);
-        $('per-camera').disabled = cams.length === 0;
+        $('per-camera').disabled = cams.length === 0 || $('mode').value === 'random';
         $('recommendations').innerHTML = cams.length
             ? '<table><tr><th>Camera</th><th>Suggested threshold</th><th>Based on</th></tr>' +
               cams.map(([c, r]) => `<tr><td>${escapeHtml(c)}</td><td>${r.threshold}</td>` +
@@ -216,13 +226,30 @@
 
         const undo = $('undo-btn');
         undo.hidden = !s.last_batch;
-        if (s.last_batch) undo.textContent = `Undo last move (${s.last_batch.images} photos)`;
+        if (s.last_batch) undo.textContent = `Undo last apply (${s.last_batch.moved} moved, ${s.last_batch.kept} kept)`;
+
+        $('labels').innerHTML = s.labelled
+            ? `${s.labelled} reviewed photos in total (${s.labelled_blurry} blurry, ${s.labelled - s.labelled_blurry} sharp) ` +
+              `can be used as training data · <a href="/api/labels.csv">Download labels (CSV)</a>`
+            : '';
+    }
+
+    function modeChanged() {
+        const random = $('mode').value === 'random';
+        $('threshold').disabled = random;
+        $('per-camera').disabled = random || Object.keys(recommendations).length === 0;
+        $('mode-help-threshold').hidden = random;
+        $('mode-help-random').hidden = !random;
+        $('grid').innerHTML = '';
+        $('candidate-info').textContent = '';
+        $('review-actions').hidden = true;
     }
 
     // ---- Review ----
     async function loadCandidates() {
+        const random = $('mode').value === 'random';
         const params = new URLSearchParams({
-            folder: currentPath, threshold: $('threshold').value, camera: $('camera').value,
+            folder: currentPath, threshold: $('threshold').value, camera: $('camera').value, mode: $('mode').value,
             per_camera: $('per-camera').checked ? '1' : '0', reviewed: $('reviewed').checked ? '1' : '0',
         });
         let result;
@@ -233,10 +260,17 @@
             return;
         }
         photos = result.images;
-        decisions = Object.fromEntries(photos.map(p => [p.path, p.label !== 'sharp']));
-        $('candidate-info').textContent = result.total
-            ? `${result.total} photos below the threshold, showing the ${photos.length} blurriest.`
-            : 'No photos below the threshold. Scan the folder first, or raise the threshold.';
+        // Below the threshold most photos are blurry, in a random sample most are sharp
+        decisions = Object.fromEntries(photos.map(p => [p.path, random ? p.label === 'blurry' : p.label !== 'sharp']));
+        if (random) {
+            $('candidate-info').textContent = result.total
+                ? `Showing ${photos.length} random photos out of ${result.total} not yet reviewed.`
+                : 'No unreviewed photos. Scan the folder first.';
+        } else {
+            $('candidate-info').textContent = result.total
+                ? `${result.total} photos below the threshold, showing the ${photos.length} blurriest.`
+                : 'No photos below the threshold. Scan the folder first, or raise the threshold.';
+        }
         renderGrid();
     }
 
@@ -286,7 +320,7 @@
         $('apply-btn').disabled = true;
         try {
             const r = await api('/api/apply', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ move, keep }),
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ move, keep, mode: $('mode').value }),
             });
             $('review-status').textContent = `Moved ${r.moved}, kept ${r.kept}.` +
                 (r.errors.length ? ` ${r.errors.length} errors: ${r.errors.join('; ')}` : '');
