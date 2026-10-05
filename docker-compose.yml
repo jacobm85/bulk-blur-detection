@@ -3,7 +3,11 @@ services:
     build: .
     container_name: bulk-blur-detection
     volumes:
-      - /mnt:/app/images  # Mount the local folder with your images
+      - /mnt:/app/images                  # The folder with your photos
+      - blur-data:/app/data               # Scores and review decisions (keep between updates)
     ports:
       - "5050:5000"  # Expose the web app on port 5050
     restart: unless-stopped  # Restart the container unless manually stopped
+
+volumes:
+  blur-data:

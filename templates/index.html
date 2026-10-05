@@ -2,245 +2,320 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Blur Detector</title>
-    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
-        body {
-            font-family: Arial, sans-serif;
+        :root {
+            --bg: #f6f6f4; --panel: #fff; --text: #222; --muted: #6b6b6b; --border: #ddd;
+            --accent: #2f6fde; --move: #d64541; --keep: #2e9d57;
         }
-        .container {
-            width: 80%;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        .file-browser {
-            background-color: #f0f0f0;
-            border: 1px solid #ccc;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-        }
-        .directory {
-            margin: 5px 0;
-            padding: 5px;
-            cursor: pointer;
-            font-weight: bold;
-        }
-        .actions {
-            text-align: right;
-        }
-        .form-section {
-            text-align: center;
-            margin-top: 20px;
-        }
-        .current-path {
-            font-style: italic;
-        }
-        button {
-            background-color: #4CAF50;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: background-color 0.3s;
-        }
-        button:hover {
-            background-color: #45a049;
-        }
-        .back-button {
-            background-color: #f44336;
-        }
-        .back-button:hover {
-            background-color: #e53935;
-        }
-        .selected {
-            background-color: #2196F3;
-        }
-        .selected:hover {
-            background-color: #1E88E5;
-        }
-        .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #3498db;
-            border-radius: 50%;
-            width: 30px;
-            height: 30px;
-            animation: spin 2s linear infinite;
-            display: none;
-            margin: 0 auto;
-        }
-        .log {
-            background-color: #222;
-            color: #ddd;
-            font-family: monospace;
-            font-size: 12px;
-            height: 300px;
-            overflow-y: auto;
-            padding: 10px;
-            margin-top: 20px;
-            text-align: left;
-            white-space: pre-wrap;
-            display: none;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+        * { box-sizing: border-box; }
+        body { font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif; margin: 0;
+               background: var(--bg); color: var(--text); }
+        .container { max-width: 1400px; margin: 0 auto; padding: 16px; }
+        h1 { margin: 8px 0 16px; font-size: 1.5rem; }
+        h2 { margin: 0 0 12px; font-size: 1.1rem; }
+        .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+                 padding: 16px; margin-bottom: 16px; }
+        .muted { color: var(--muted); font-size: 0.9rem; }
+        .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        button { background: var(--accent); color: #fff; padding: 8px 14px; border: none; border-radius: 6px;
+                 cursor: pointer; font-size: 0.95rem; }
+        button:disabled { opacity: 0.5; cursor: default; }
+        button.secondary { background: #e4e4e0; color: var(--text); }
+        input[type=number], select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;
+                                     font-size: 0.95rem; }
+        input[type=number] { width: 90px; }
+        .path { font-family: ui-monospace, monospace; font-size: 0.95rem; word-break: break-all; }
+        .dirs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+        .dir { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
+               background: #fafafa; }
+        .dir:hover { border-color: var(--accent); }
+        .log { background: #1e1e1e; color: #ddd; font-family: ui-monospace, monospace; font-size: 12px;
+               max-height: 220px; overflow-y: auto; padding: 10px; margin-top: 10px; white-space: pre-wrap;
+               border-radius: 6px; display: none; }
+        table { border-collapse: collapse; margin-top: 8px; font-size: 0.9rem; }
+        td, th { padding: 4px 12px 4px 0; text-align: left; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px;
+                margin-top: 12px; }
+        .card { border: 3px solid var(--move); border-radius: 8px; overflow: hidden; cursor: pointer;
+                background: #fafafa; position: relative; }
+        .card.keep { border-color: var(--keep); }
+        .card img { width: 100%; height: 160px; object-fit: cover; display: block; background: #eee; }
+        .card .meta { padding: 6px 8px; font-size: 0.8rem; line-height: 1.35; }
+        .card .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .badge { position: absolute; top: 6px; left: 6px; padding: 2px 8px; border-radius: 4px; color: #fff;
+                 font-size: 0.75rem; font-weight: 600; background: var(--move); }
+        .card.keep .badge { background: var(--keep); }
+        .zoom { position: absolute; top: 6px; right: 6px; background: rgba(0,0,0,0.6); color: #fff;
+                border-radius: 4px; padding: 2px 8px; font-size: 0.8rem; }
+        .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.9); display: none; align-items: center;
+                   justify-content: center; z-index: 10; cursor: zoom-out; }
+        .overlay img { max-width: 96vw; max-height: 92vh; }
+        .overlay .caption { position: absolute; bottom: 10px; color: #ddd; font-size: 0.9rem; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Blur Detector</h1>
-        <h2>Select Folder</h2>
-        <div id="file-browser" class="file-browser"></div>
-        <div class="actions">
-            <button type="button" id="select-folder-btn" onclick="selectFolder()">Select This Folder</button>
+<div class="container">
+    <h1>Blur Detector</h1>
+
+    <div class="panel">
+        <h2>1. Folder</h2>
+        <div class="row">
+            <button class="secondary" id="up-btn" onclick="goUp()">&uarr; Up</button>
+            <span class="path" id="current-path">/</span>
+            <span class="muted" id="image-count"></span>
         </div>
-        <form id="process-form" class="form-section" onsubmit="startProcessing(event)">
-            <input type="hidden" name="source_folder" id="source_folder"> <!-- Hidden input to pass the selected folder -->
-            <div>
-                <p>Higher threshold = more images. 19 is clearly blurry photos. 100+ is more prone to false positives due to motion blur or parts being out of focus.</p>
-                <label for="threshold">Threshold for blurriness (default: 19):</label>
-                <input type="text" name="threshold" id="threshold" value="19">
-            </div>
-            <br><br>
-            <div>
-                <label for="modelbased">Use Model-based Classification?</label>
-                <input type="checkbox" name="modelbased" id="modelbased" value="True">
-            </div>
-            <br><br>
-            <div>
-                <p>Downscale images before the blur check. Much faster on large photos and makes the threshold independent of resolution, but the threshold needs recalibrating. 0 = full resolution.</p>
-                <label for="max_size">Max image size in pixels (default: 0):</label>
-                <input type="text" name="max_size" id="max_size" value="0">
-            </div>
-            <br><br>
-            <div>
-                <p>Higher threshold = more images get classed as blurry. 0.01 is strict and can be used with a higher blurriness threshold (like 80 or 100).</p>
-                <label for="model_threshold">Model-based Threshold (default: 0.5):</label>
-                <input type="text" name="model_threshold" id="model_threshold" value="0.5">
-            </div>
-            <br><br>
-            <button type="submit" id="submit-btn">Process Images in Folder</button>
-            <div id="spinner" class="spinner"></div>
-            <p id="status"></p>
-        </form>
-        <div id="log" class="log"></div>
+        <div class="dirs" id="dirs"></div>
     </div>
 
-    <script>
-        const socket = io();
-        const baseDir = {{ base_dir|tojson }};
-        let currentPath = baseDir;  // Default start path
-        let folderSelected = false;
+    <div class="panel">
+        <h2>2. Scan</h2>
+        <p class="muted">Scores every photo in this folder and its subfolders. Only new or changed photos are
+            scored again, so re-running it after adding photos is quick. Nothing is moved.</p>
+        <div class="row">
+            <button id="scan-btn" onclick="startScan()">Scan this folder</button>
+            <span id="scan-status" class="muted"></span>
+        </div>
+        <div id="log" class="log"></div>
+        <div id="stats" class="muted" style="margin-top:10px"></div>
+    </div>
 
-        // Browsing function
-        function browse(path) {
-            currentPath = path;  // Update the current path
-            folderSelected = false;  // Reset folder selected status
-            document.getElementById('select-folder-btn').classList.remove('selected');
-            socket.emit('browse', { path: path });  // Emit to browse new path
+    <div class="panel">
+        <h2>3. Review</h2>
+        <p class="muted">Photos below the threshold are shown blurriest first. Lower score = blurrier.
+            Everything is marked <b style="color:var(--move)">Move</b>; click the photos you want to
+            <b style="color:var(--keep)">Keep</b>, then apply. Moved photos (with Live Photo videos, RAW files
+            and sidecars) go to a <code>Blurry</code> folder next to them, and can be undone.</p>
+        <div class="row">
+            <label>Threshold <input type="number" id="threshold" value="{{ default_threshold }}" min="0" step="10"></label>
+            <label><input type="checkbox" id="per-camera"> Per-camera thresholds</label>
+            <select id="camera"><option value="">All cameras</option></select>
+            <label><input type="checkbox" id="reviewed"> Include reviewed</label>
+            <button onclick="loadCandidates()">Show photos</button>
+        </div>
+        <div id="recommendations"></div>
+        <div class="row" style="margin-top:12px">
+            <span id="candidate-info" class="muted"></span>
+        </div>
+        <div class="grid" id="grid"></div>
+        <div class="row" style="margin-top:12px" id="review-actions" hidden>
+            <button class="secondary" onclick="markAll(true)">Mark all Move</button>
+            <button class="secondary" onclick="markAll(false)">Mark all Keep</button>
+            <button id="apply-btn" onclick="applyReview()">Apply</button>
+        </div>
+        <div class="row" style="margin-top:12px">
+            <button class="secondary" id="undo-btn" onclick="undoLast()" hidden>Undo last move</button>
+            <span id="review-status" class="muted"></span>
+        </div>
+    </div>
+</div>
+
+<div class="overlay" id="overlay" onclick="this.style.display='none'">
+    <img id="overlay-img" alt="">
+    <div class="caption" id="overlay-caption"></div>
+</div>
+
+<script>
+    const socket = io();
+    let currentPath = '';
+    let photos = [];          // current page of candidates
+    let decisions = {};       // path -> true (move) / false (keep)
+    let recommendations = {};
+
+    const $ = id => document.getElementById(id);
+    const enc = encodeURIComponent;
+
+    async function api(url, options) {
+        const response = await fetch(url, options);
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(text.replace(/<[^>]+>/g, ' ').trim() || response.statusText);
         }
+        return response.json();
+    }
 
-        // Go back to the parent directory
-        function goBack() {
-            const pathSegments = currentPath.split('/');
-            pathSegments.pop();  // Remove the last directory segment
-            browse(pathSegments.join('/') || baseDir);
+    // ---- Folder browsing ----
+    function browse(path) { socket.emit('browse', { path }); }
+    function goUp() { browse(currentPath.split('/').slice(0, -1).join('/')); }
+
+    socket.on('files', data => {
+        currentPath = data.path;
+        $('current-path').textContent = '/' + data.path;
+        $('image-count').textContent = `${data.images} photos directly in this folder`;
+        $('up-btn').disabled = data.path === '';
+        const dirs = $('dirs');
+        dirs.innerHTML = '';
+        data.dirs.forEach(name => {
+            const el = document.createElement('div');
+            el.className = 'dir';
+            el.textContent = name;
+            el.onclick = () => browse(currentPath ? `${currentPath}/${name}` : name);
+            dirs.appendChild(el);
+        });
+        $('grid').innerHTML = '';
+        $('candidate-info').textContent = '';
+        $('review-actions').hidden = true;
+        loadStats();
+    });
+    socket.on('error', data => alert(data.message));
+
+    // ---- Scanning ----
+    function setScanning(running) {
+        $('scan-btn').disabled = running;
+        $('scan-status').textContent = running ? 'Scanning…' : '';
+    }
+    function appendLog(line) {
+        const log = $('log');
+        log.style.display = 'block';
+        log.textContent += line + '\n';
+        log.scrollTop = log.scrollHeight;
+    }
+    function startScan() {
+        $('log').textContent = '';
+        socket.emit('scan', { folder: currentPath });
+    }
+    socket.on('status', data => setScanning(data.running));
+    socket.on('started', () => setScanning(true));
+    socket.on('progress', data => appendLog(data.line));
+    socket.on('done', data => {
+        setScanning(false);
+        appendLog(data.message);
+        loadStats();
+    });
+
+    // ---- Stats and per-camera recommendations ----
+    async function loadStats() {
+        const s = await api(`/api/stats?folder=${enc(currentPath)}`);
+        recommendations = s.recommendations;
+        $('stats').textContent = s.images
+            ? `${s.images} photos scanned in this folder · ${s.moved} moved · ${s.kept} kept as sharp` +
+              (s.errors ? ` · ${s.errors} could not be read` : '')
+            : 'This folder has not been scanned yet.';
+
+        const select = $('camera');
+        const selected = select.value;
+        select.innerHTML = '<option value="">All cameras</option>';
+        s.cameras.forEach(c => {
+            const option = document.createElement('option');
+            option.value = c.camera;
+            option.textContent = `${c.camera} (${c.images})`;
+            select.appendChild(option);
+        });
+        select.value = selected;
+
+        const cams = Object.entries(recommendations);
+        $('per-camera').disabled = cams.length === 0;
+        $('recommendations').innerHTML = cams.length
+            ? '<table><tr><th>Camera</th><th>Suggested threshold</th><th>Based on</th></tr>' +
+              cams.map(([c, r]) => `<tr><td>${escapeHtml(c)}</td><td>${r.threshold}</td>` +
+                  `<td class="muted">${r.reviewed} reviewed, ${r.blurry} blurry</td></tr>`).join('') + '</table>'
+            : '<p class="muted">Per-camera threshold suggestions appear once you have reviewed about 40 photos ' +
+              'from a camera (at least 10 kept and 10 moved).</p>';
+
+        const undo = $('undo-btn');
+        undo.hidden = !s.last_batch;
+        if (s.last_batch) undo.textContent = `Undo last move (${s.last_batch.images} photos)`;
+    }
+
+    // ---- Review ----
+    async function loadCandidates() {
+        const params = new URLSearchParams({
+            folder: currentPath, threshold: $('threshold').value, camera: $('camera').value,
+            per_camera: $('per-camera').checked ? '1' : '0', reviewed: $('reviewed').checked ? '1' : '0',
+        });
+        let result;
+        try {
+            result = await api(`/api/candidates?${params}`);
+        } catch (e) {
+            alert(e.message);
+            return;
         }
+        photos = result.images;
+        decisions = Object.fromEntries(photos.map(p => [p.path, p.label !== 'sharp']));
+        $('candidate-info').textContent = result.total
+            ? `${result.total} photos below the threshold, showing the ${photos.length} blurriest.`
+            : 'No photos below the threshold. Scan the folder first, or raise the threshold.';
+        renderGrid();
+    }
 
-        // Select the current folder
-        function selectFolder() {
-            document.getElementById('source_folder').value = currentPath;  // Set the form input to the current path
-            document.getElementById('select-folder-btn').classList.add('selected');
-            folderSelected = true;  // Mark folder as selected
-        }
+    function renderGrid() {
+        const grid = $('grid');
+        grid.innerHTML = '';
+        photos.forEach(p => {
+            const card = document.createElement('div');
+            card.className = 'card' + (decisions[p.path] ? '' : ' keep');
+            card.innerHTML = `
+                <span class="badge">${decisions[p.path] ? 'Move' : 'Keep'}</span>
+                <span class="zoom" title="View larger">&#128269;</span>
+                <img loading="lazy" src="/thumb?path=${enc(p.path)}&size=360&v=${p.mtime}" alt="">
+                <div class="meta">
+                    <div class="name" title="${escapeHtml(p.path)}">${escapeHtml(p.path.split('/').pop())}</div>
+                    <div class="muted">score ${Math.round(p.score)} · ${escapeHtml(p.camera || 'unknown camera')}</div>
+                </div>`;
+            card.onclick = () => {
+                decisions[p.path] = !decisions[p.path];
+                renderGrid();
+            };
+            card.querySelector('.zoom').onclick = event => {
+                event.stopPropagation();
+                showLarge(p);
+            };
+            grid.appendChild(card);
+        });
+        const moveCount = Object.values(decisions).filter(Boolean).length;
+        $('review-actions').hidden = photos.length === 0;
+        $('apply-btn').textContent = `Apply: move ${moveCount}, keep ${photos.length - moveCount}`;
+    }
 
-        function setRunning(running) {
-            const button = document.getElementById('submit-btn');
-            button.disabled = running;
-            button.textContent = running ? 'Processing...' : 'Process Images in Folder';
-            document.getElementById('spinner').style.display = running ? 'block' : 'none';
-        }
+    function markAll(move) {
+        photos.forEach(p => decisions[p.path] = move);
+        renderGrid();
+    }
 
-        function appendLog(line) {
-            const log = document.getElementById('log');
-            log.style.display = 'block';
-            log.textContent += line + '\n';
-            log.scrollTop = log.scrollHeight;
-        }
+    function showLarge(p) {
+        $('overlay-img').src = `/thumb?path=${enc(p.path)}&size=1600&v=${p.mtime}`;
+        $('overlay-caption').textContent = `${p.path} · score ${Math.round(p.score)} · ${p.camera || 'unknown camera'}`;
+        $('overlay').style.display = 'flex';
+    }
 
-        // Start processing the selected folder
-        function startProcessing(event) {
-            event.preventDefault();
-            if (!folderSelected) {
-                alert('Please select a folder first.');
-                return;
-            }
-            document.getElementById('log').textContent = '';
-            document.getElementById('status').textContent = '';
-            socket.emit('process', {
-                source_folder: document.getElementById('source_folder').value,
-                threshold: document.getElementById('threshold').value,
-                modelbased: document.getElementById('modelbased').checked,
-                model_threshold: document.getElementById('model_threshold').value,
-                max_size: document.getElementById('max_size').value,
+    async function applyReview() {
+        const move = photos.filter(p => decisions[p.path]).map(p => p.path);
+        const keep = photos.filter(p => !decisions[p.path]).map(p => p.path);
+        $('apply-btn').disabled = true;
+        try {
+            const r = await api('/api/apply', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ move, keep }),
             });
+            $('review-status').textContent = `Moved ${r.moved}, kept ${r.kept}.` +
+                (r.errors.length ? ` ${r.errors.length} errors: ${r.errors.join('; ')}` : '');
+        } catch (e) {
+            alert(e.message);
+        } finally {
+            $('apply-btn').disabled = false;
         }
+        await loadStats();
+        await loadCandidates();
+    }
 
-        // Listen for the folder list
-        socket.on('files', data => {
-            currentPath = data.path;
-            const fileBrowser = document.getElementById('file-browser');
-            fileBrowser.innerHTML = '';  // Clear previous file browser contents
+    async function undoLast() {
+        try {
+            const r = await api('/api/undo', { method: 'POST' });
+            $('review-status').textContent = `Restored ${r.restored} photos.` +
+                (r.errors.length ? ` ${r.errors.length} errors: ${r.errors.join('; ')}` : '');
+        } catch (e) {
+            alert(e.message);
+        }
+        await loadStats();
+        await loadCandidates();
+    }
 
-            const path = document.createElement('p');
-            path.className = 'current-path';
-            path.textContent = `Current path: ${data.path}`;
-            fileBrowser.appendChild(path);
+    function escapeHtml(text) {
+        return String(text).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
 
-            // Display directories only
-            data.files.forEach(file => {
-                if (file.is_dir) {  // Only show directories
-                    const fileElement = document.createElement('div');
-                    fileElement.textContent = file.name;
-                    fileElement.className = 'directory';
-                    fileElement.onclick = () => {
-                        browse(data.path + '/' + file.name);  // Update current path and browse into subdirectory
-                    };
-                    fileBrowser.appendChild(fileElement);
-                }
-            });
-
-            // Back button to go to parent directory
-            if (!data.is_root) {
-                const backButton = document.createElement('button');
-                backButton.textContent = 'Back';
-                backButton.className = 'back-button';
-                backButton.onclick = goBack;  // Go back one level
-                fileBrowser.appendChild(backButton);
-            }
-        });
-
-        socket.on('status', data => setRunning(data.running));
-        socket.on('started', data => {
-            setRunning(true);
-            appendLog(`Processing ${data.source_folder}...`);
-        });
-        socket.on('progress', data => appendLog(data.line));
-        socket.on('done', data => {
-            setRunning(false);
-            document.getElementById('status').textContent = data.message;
-            appendLog(data.message);
-        });
-
-        socket.on('error', data => {
-            alert(data.message);
-        });
-
-        // Start browsing from the default folder
-        browse(baseDir);
-    </script>
+    browse('');
+</script>
 </body>
 </html>

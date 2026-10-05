@@ -1,6 +1,6 @@
 Flask
 Flask-SocketIO
 eventlet
-opencv-python-headless
-scikit-image
-torch
+numpy
+Pillow
+pillow-heif

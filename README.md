@@ -1,25 +1,55 @@
 # Bulk Blur Detector Web GUI
-Combined https://github.com/danngalann/bulk-blur-detection and https://github.com/Utkarsh-Deshmukh/Blurry-Image-Detector with a simple web GUI in Docker.
 
-Having around 200k unsorted photos, with montly new additions, is a pain to handle. Script can be run to process photos and sort out blurry photos to make it easier to hadle large amount of photos. 
+Find the blurry photos in a large photo library and move them out of the way, from a web page in Docker.
 
-Minor changes to original scripts (no longer case sensitive file extension) more user control are some changes. Supposed to make it easier to use the blur detection on folders. 
-Browse and select a folder, define a threshold value that determines "how much" blurryness is considered "blurry" and process. Choose if you want to use model based blurry detection. 
-It will process a directory of pictures and autonomously move the blurry ones to a different folder.
+Having around 200k unsorted photos, with monthly new additions, is a pain to handle. This tool scores
+every photo for sharpness, shows you the blurriest ones and moves the ones you confirm to a `Blurry`
+folder next to them. Nothing is moved without your review, and every move can be undone.
 
-## Instructions
-### Usage
-Browse to folder, select and run. Choose threshold and if to run the model based detection. 
-Blurry photos will be moved to a Blurry folder. If using model based it will re classify the blurry into a new blurry folder (and therefore decided that the remaining is sharp)
-.
-### Docker
-Use git as source in Portainer or use docker-compose.yml
-Specify path where photos are stored in the compose file.
+Originally based on https://github.com/danngalann/bulk-blur-detection and
+https://github.com/Utkarsh-Deshmukh/Blurry-Image-Detector. Version 1 (Laplacian threshold plus the DCT
+model, moving photos automatically) is kept on the [`v1` branch](../../tree/v1).
+
+## Usage
+1. **Folder** – browse to the folder you want to clean up.
+2. **Scan** – scores every photo in the folder and its subfolders. Scores are stored in a database, so
+   later scans only look at new or changed photos. Nothing is moved.
+3. **Review** – the photos below the threshold are shown blurriest first. All are marked *Move*; click
+   the ones you want to *Keep* and press *Apply*. Click the magnifier to see a photo larger.
+   - Moved photos go to a `Blurry` folder in the same folder as the photo. Files that belong to the photo
+     move with it: iPhone Live Photo videos (`.MOV`), edit sidecars (`.AAE`), RAW files from RAW+JPEG
+     shooting and `.xmp` files. Existing files are never overwritten.
+   - *Undo last move* puts the last batch back.
+   - Photos you keep are remembered and not shown again.
+
+Supported formats: JPEG, HEIC/HEIF (iPhone), PNG, TIFF, WebP, BMP. NAS system folders such as `@eaDir`
+and `#recycle` are skipped.
+
+### Threshold and per-camera suggestions
+The score is the sharpness of the sharpest parts of the photo (Laplacian variance over a grid of tiles,
+on a copy downscaled to 1024 px). Lower = blurrier. The default threshold of 200 was calibrated on the
+CERTH Image Blur Dataset, where it finds about two thirds of the blurry photos while flagging about 5 %
+of the sharp ones (version 1 found 58 % while moving 8 % of the sharp ones).
+
+Cameras differ, so once you have reviewed about 40 photos from a camera (at least 10 kept and 10
+moved) the review page suggests a threshold for that camera. Tick *Per-camera thresholds* to use them.
+
+## Docker
+Use git as source in Portainer, or `docker compose up -d` with `docker-compose.yml`.
+Specify the path where your photos are stored in the compose file. The database with scores and review
+decisions is kept in the `blur-data` volume.
 ```
 Exposes port 5050
 ```
 
-
+## Development
+```
+pip install -r requirements.txt pytest
+python -m pytest tests
+IMAGES_DIR=/path/to/photos python app.py
+```
+`tools/evaluate_certh.py` measures the score against the CERTH Image Blur Dataset; run it after any
+change to `scoring.py`.
 
 ## Requirements
  ```Docker```
