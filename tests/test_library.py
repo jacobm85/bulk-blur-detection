@@ -140,14 +140,128 @@ def test_random_sample_and_label_export(lib):
 def test_drafts_survive_until_applied(lib):
     conn, root = lib
     library.scan(conn, root, log=lambda m: None)
-    library.save_drafts(conn, {'blurry.jpg': False, 'trip/IMG_0001.JPG': True})
-    library.save_drafts(conn, {'blurry.jpg': True})  # changed my mind
+    library.save_drafts(conn, {'blurry.jpg': 'keep', 'trip/IMG_0001.JPG': 'move'})
+    library.save_drafts(conn, {'blurry.jpg': 'keep_blurry'})  # changed my mind
     assert library.draft_count(conn) == 2
+    with pytest.raises(ValueError):
+        library.save_drafts(conn, {'blurry.jpg': True})
 
     _, rows = library.candidates(conn, '', scoring.DEFAULT_THRESHOLD)
-    assert {r['path']: r['draft'] for r in rows} == {'blurry.jpg': 1, 'trip/IMG_0001.JPG': 1}
+    assert {r['path']: r['draft'] for r in rows} == {'blurry.jpg': 'keep_blurry', 'trip/IMG_0001.JPG': 'move'}
     _, rows = library.candidates(conn, '', None, random_order=True, limit=2)
     assert {r['path'] for r in rows} == {'blurry.jpg', 'trip/IMG_0001.JPG'}  # drafts come first
 
     library.apply_review(conn, root, move=['blurry.jpg'], keep=['trip/IMG_0001.JPG'])
     assert library.draft_count(conn) == 0
+
+
+def test_keep_blurry_and_undo_restores_decisions(lib):
+    conn, root = lib
+    library.scan(conn, root, log=lambda m: None)
+    batch, moved, _ = library.apply_review(conn, root, move=['trip/IMG_0001.JPG'], keep=['sharp.jpg'],
+                                           keep_blurry=['blurry.jpg'])
+    assert moved == 1 and os.path.exists(os.path.join(root, 'blurry.jpg'))  # kept blurry: not moved
+    labels = dict(conn.execute('SELECT path, label FROM images').fetchall())
+    assert labels['blurry.jpg'] == 'blurry' and labels['trip/Blurry/IMG_0001.JPG'] == 'blurry'
+    s = library.stats(conn)
+    assert (s['moved'], s['kept'], s['kept_blurry']) == (1, 1, 1)
+    last = library.last_batch(conn)
+    assert (last['moved'], last['kept'], last['kept_blurry']) == (1, 1, 1)
+    exported = {r['path']: (r['label'], r['moved']) for r in library.export_labels(conn)}
+    assert exported == {'trip/Blurry/IMG_0001.JPG': ('blurry', 1), 'sharp.jpg': ('sharp', 0),
+                        'blurry.jpg': ('blurry', 0)}
+
+    # Undo brings the photos back with the decisions that were applied, ready to change and apply again
+    assert library.undo(conn, root, batch) == (3, [])
+    assert dict(conn.execute('SELECT path, decision FROM drafts').fetchall()) == {
+        'trip/IMG_0001.JPG': 'move', 'sharp.jpg': 'keep', 'blurry.jpg': 'keep_blurry'}
+    assert all(label is None for _, label in conn.execute('SELECT path, label FROM images'))
+
+
+def test_eye_score_decides_when_there_is_a_face(lib):
+    conn, _ = lib
+    conn.executemany('INSERT INTO images (path, score, eye_score) VALUES (?, ?, ?)', [
+        ('soft background.jpg', 50, 500),     # sharp eyes, rest out of focus: fine
+        ('missed focus.jpg', 1000, 30),       # sharp background, blurry eyes: blurry
+        ('landscape.jpg', 100, None),         # no face: judged on the score
+        ('sharp landscape.jpg', 900, None),
+    ])
+    total, rows = library.candidates(conn, '', 200, eye_threshold=120)
+    assert total == 2
+    assert [r['path'] for r in rows] == ['missed focus.jpg', 'landscape.jpg']  # 30/120 before 100/200
+
+
+def test_rescoring_keeps_review_decisions(lib):
+    conn, root = lib
+    library.scan(conn, root, log=lambda m: None)
+    library.apply_review(conn, root, move=['blurry.jpg'], keep=['sharp.jpg'])
+    conn.execute('UPDATE images SET score_version = 1, eye_score = -1')
+    conn.commit()
+    assert library.scan(conn, root, log=lambda m: None) == 4  # the moved photo in Blurry too
+    rows = {r['path']: r for r in conn.execute('SELECT * FROM images')}
+    assert rows['Blurry/blurry.jpg']['label'] == 'blurry' and rows['sharp.jpg']['label'] == 'sharp'
+    assert all(r['score_version'] == scoring.SCORE_VERSION and r['eye_score'] is None for r in rows.values())
+    assert library.scan(conn, root, log=lambda m: None) == 0
+
+    make_photo(os.path.join(root, 'sharp.jpg'), blur=12, seed=1)  # edited: the old decision no longer applies
+    os.utime(os.path.join(root, 'sharp.jpg'), (1, 1))
+    library.scan(conn, root, log=lambda m: None)
+    assert library.current_label(conn, 'sharp.jpg') is None
+
+
+def test_old_database_is_upgraded(tmp_path):
+    import sqlite3
+    path = str(tmp_path / 'old.sqlite')
+    old = sqlite3.connect(path)
+    old.executescript('CREATE TABLE images (path TEXT PRIMARY KEY, mtime REAL, size INTEGER, score REAL, '
+                      'global_score REAL, width INTEGER, height INTEGER, camera TEXT, taken TEXT, exposure REAL, '
+                      'fnumber REAL, iso REAL, focal REAL, error TEXT, label TEXT, scored_at TEXT);'
+                      'CREATE TABLE drafts (path TEXT PRIMARY KEY, move INTEGER, updated_at TEXT);'
+                      "INSERT INTO drafts VALUES ('a.jpg', 1, ''), ('b.jpg', 0, '');")
+    old.commit()
+    old.close()
+    conn = library.connect(path)
+    assert dict(conn.execute('SELECT path, decision FROM drafts').fetchall()) == {'a.jpg': 'move', 'b.jpg': 'keep'}
+    assert {'eye_score', 'faces', 'score_version'} <= {r['name'] for r in conn.execute('PRAGMA table_info(images)')}
+
+
+def fake_faces(*faces):
+    """A stand-in for the face detector: faces given as (x, y, width) fractions of the image."""
+    def find(img):
+        w, h = img.size
+        return [np.array([x * w, y * h, fw * w, fw * w, x * w + 0.3 * fw * w, y * h + 0.4 * fw * w,
+                          x * w + 0.7 * fw * w, y * h + 0.4 * fw * w, 0, 0, 0, 0, 0, 0, 0.95])
+                for x, y, fw in faces]
+    return find
+
+
+def test_eye_score_measures_the_eyes(tmp_path, monkeypatch):
+    # An upright 2400x3200 photo that is only sharp around one eye, stored sideways with an EXIF
+    # orientation as cameras do; the eye crop must come from the right place. The face is 240 px wide,
+    # so the crop needs more resolution than the reduced-size decoding used for the score.
+    rng = np.random.default_rng(0)
+    upright = np.full((3200, 2400), 128, np.uint8)
+    upright[1020:1095, 1090:1170] = (rng.random((75, 80)) * 255).astype(np.uint8)
+    exif = Image.Exif()
+    exif[scoring.TAG_ORIENTATION] = 6
+    path = str(tmp_path / 'portrait.jpg')
+    Image.fromarray(upright).transpose(Image.Transpose.ROTATE_90).save(path, quality=95, exif=exif)
+
+    # Eyes at x = 0.43 and 0.47 of the width, y = 0.3 of the height + 0.04 of the width
+    monkeypatch.setattr(scoring, 'find_faces', fake_faces((0.4, 0.3, 0.1)))
+    result = scoring.score_file(path)
+    assert result['faces'] == 1 and result['eye_score'] > 1000
+    assert abs(result['eye_x'] - 0.47) < 0.005 and abs(result['eye_y'] - 0.33) < 0.005  # the sharp one
+
+    monkeypatch.setattr(scoring, 'find_faces', fake_faces((0.4, 0.6, 0.1)))  # eyes on the plain part
+    assert scoring.score_file(path)['eye_score'] < 1
+
+    monkeypatch.setattr(scoring, 'find_faces', fake_faces((0.5, 0.5, 0.04)))  # a face in the background
+    result = scoring.score_file(path)
+    assert result['eye_score'] is None and result['faces'] == 0
+
+
+def test_photos_without_faces_have_no_eye_score(lib):
+    _, root = lib
+    result = scoring.score_file(os.path.join(root, 'sharp.jpg'))
+    assert result['eye_score'] is None and result['faces'] == 0

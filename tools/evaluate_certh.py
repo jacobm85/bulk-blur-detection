@@ -18,7 +18,7 @@ import numpy as np
 from openpyxl import load_workbook
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from scoring import DEFAULT_THRESHOLD, score_file  # noqa: E402
+from scoring import DEFAULT_EYE_THRESHOLD, DEFAULT_THRESHOLD, score_file  # noqa: E402
 
 
 def load_labels(xlsx):
@@ -57,6 +57,18 @@ def main():
         marker = '  <- default' if t == DEFAULT_THRESHOLD else ''
         print(f'{t:>10}  {tp / blurry.sum():>14.1%}  {fp / (~blurry).sum():>14.1%}  '
               f'{tp / max(tp + fp, 1):>9.1%}{marker}')
+
+    # Photos with a clear face are judged on the eyes instead (few in CERTH, so only a rough check)
+    eyes = np.array([r['eye_score'] if r['eye_score'] is not None else np.nan for _, r in ok])
+    has_eyes = ~np.isnan(eyes)
+    flagged = np.where(has_eyes, eyes < DEFAULT_EYE_THRESHOLD, scores < DEFAULT_THRESHOLD)
+    tp, fp = (flagged & blurry).sum(), (flagged & ~blurry).sum()
+    print(f'\n{has_eyes.sum()} photos judged on the eyes ({(has_eyes & blurry).sum()} blurry). With the default '
+          f'thresholds ({DEFAULT_THRESHOLD}, eyes {DEFAULT_EYE_THRESHOLD}): {tp / blurry.sum():.1%} of the blurry '
+          f'photos found, {fp / (~blurry).sum():.1%} of the sharp ones flagged')
+    for (name, r), is_blurry in sorted(((x, b) for x, b in zip(ok, blurry) if x[1]['eye_score'] is not None),
+                                       key=lambda x: x[0][1]['eye_score']):
+        print(f'    {name:<20} {"blurry" if is_blurry else "sharp":<7} eyes {r["eye_score"]:7.1f}  score {r["score"]:7.1f}')
 
 
 if __name__ == '__main__':

@@ -50,7 +50,8 @@ def db():
 
 @app.route('/')
 def index():
-    return render_template('index.html', default_threshold=scoring.DEFAULT_THRESHOLD, page_size=PAGE_SIZE)
+    return render_template('index.html', default_threshold=scoring.DEFAULT_THRESHOLD,
+                           default_eye_threshold=scoring.DEFAULT_EYE_THRESHOLD, page_size=PAGE_SIZE)
 
 
 @socketio.on('browse')
@@ -111,6 +112,7 @@ def api_stats():
                     'labelled': labelled[0], 'labelled_blurry': labelled[1] or 0,
                     'drafts': library.draft_count(conn),
                     'recommendations': library.recommend_thresholds(conn),
+                    'eye_recommendation': library.recommend_eye_threshold(conn),
                     'last_batch': library.last_batch(conn)})
 
 
@@ -118,6 +120,7 @@ def api_stats():
 def api_candidates():
     try:
         threshold = float(request.args.get('threshold', scoring.DEFAULT_THRESHOLD))
+        eye_threshold = float(request.args.get('eye_threshold', scoring.DEFAULT_EYE_THRESHOLD))
         offset = max(int(request.args.get('offset', 0)), 0)
     except ValueError:
         abort(400, 'Invalid threshold or offset')
@@ -126,12 +129,13 @@ def api_candidates():
     per_camera = None
     if request.args.get('per_camera') == '1' and not random_sample:
         per_camera = {c: r['threshold'] for c, r in library.recommend_thresholds(conn).items()}
+        eye_threshold = (library.recommend_eye_threshold(conn) or {}).get('threshold', eye_threshold)
     total, rows = library.candidates(conn, rel_folder(request.args.get('folder')),
                                      None if random_sample else threshold,
                                      request.args.get('camera') or None,
                                      include_reviewed=request.args.get('reviewed') == '1',
                                      limit=PAGE_SIZE, offset=offset, camera_thresholds=per_camera,
-                                     random_order=random_sample)
+                                     random_order=random_sample, eye_threshold=eye_threshold)
     return jsonify({'total': total, 'images': rows})
 
 
@@ -162,11 +166,11 @@ def checked_paths(paths):
 def api_drafts():
     """Save review decisions as they are made, so a review can be continued later."""
     decisions = request.get_json(force=True).get('decisions', {})
-    if not isinstance(decisions, dict):
-        abort(400, 'decisions must be an object')
+    if not isinstance(decisions, dict) or any(d not in library.DECISIONS for d in decisions.values()):
+        abort(400, f'decisions must be an object with values {library.DECISIONS}')
     paths = checked_paths(list(decisions))
     conn = db()
-    library.save_drafts(conn, {rel: bool(move) for rel, move in zip(paths, decisions.values())})
+    library.save_drafts(conn, dict(zip(paths, decisions.values())))
     return jsonify({'saved': len(paths), 'drafts': library.draft_count(conn)})
 
 
@@ -176,10 +180,13 @@ def api_apply():
         abort(409, 'Wait until the scan has finished')
     data = request.get_json(force=True)
     move, keep = checked_paths(data.get('move', [])), checked_paths(data.get('keep', []))
+    keep_blurry = checked_paths(data.get('keep_blurry', []))
     mode = 'random' if data.get('mode') == 'random' else 'threshold'
     # SQLite connections can't cross threads, so the worker thread opens its own
-    batch, moved, errors = tpool.execute(lambda: library.apply_review(db(), BASE_DIR, move, keep, mode))
-    return jsonify({'batch': batch, 'moved': moved, 'kept': len(keep), 'errors': errors})
+    batch, moved, errors = tpool.execute(
+        lambda: library.apply_review(db(), BASE_DIR, move, keep, mode, keep_blurry))
+    return jsonify({'batch': batch, 'moved': moved, 'kept': len(keep), 'kept_blurry': len(keep_blurry),
+                    'errors': errors})
 
 
 @app.route('/api/undo', methods=['POST'])

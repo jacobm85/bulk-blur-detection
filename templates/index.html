@@ -8,7 +8,7 @@
     <style>
         :root {
             --bg: #f6f6f4; --panel: #fff; --text: #222; --muted: #6b6b6b; --border: #ddd;
-            --accent: #2f6fde; --move: #d64541; --keep: #2e9d57;
+            --accent: #2f6fde; --move: #d64541; --keep: #2e9d57; --keep-blurry: #c7801a;
         }
         * { box-sizing: border-box; }
         [hidden] { display: none !important; }
@@ -41,14 +41,16 @@
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px;
                 margin-top: 12px; }
         .card { border: 3px solid var(--move); border-radius: 8px; overflow: hidden; cursor: pointer;
-                background: #fafafa; position: relative; }
+                background: #fafafa; position: relative; user-select: none; }
         .card.keep { border-color: var(--keep); }
+        .card.keep_blurry { border-color: var(--keep-blurry); }
         .card img { width: 100%; height: 160px; object-fit: cover; display: block; background: #eee; }
         .card .meta { padding: 6px 8px; font-size: 0.8rem; line-height: 1.35; }
         .card .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .badge { position: absolute; top: 6px; left: 6px; padding: 2px 8px; border-radius: 4px; color: #fff;
                  font-size: 0.75rem; font-weight: 600; background: var(--move); }
         .card.keep .badge { background: var(--keep); }
+        .card.keep_blurry .badge { background: var(--keep-blurry); }
         .zoom { position: absolute; top: 6px; right: 6px; background: rgba(0,0,0,0.6); color: #fff;
                 border-radius: 4px; padding: 2px 8px; font-size: 0.8rem; }
         .overlay { position: fixed; inset: 0; background: #111; z-index: 10; display: flex; flex-direction: column; }
@@ -64,6 +66,7 @@
         .choice { background: #444; }
         .choice.move.active { background: var(--move); }
         .choice.keep.active { background: var(--keep); }
+        .choice.keep_blurry.active { background: var(--keep-blurry); }
     </style>
 </head>
 <body>
@@ -98,7 +101,11 @@
         <p class="muted" id="mode-help-threshold">Photos below the threshold are shown blurriest first. Lower
             score = blurrier. Everything is marked <b style="color:var(--move)">Move</b>; click the photos you
             want to <b style="color:var(--keep)">Keep</b>, then apply. Moved photos (with Live Photo videos, RAW
-            files and sidecars) go to a <code>Blurry</code> folder next to them, and can be undone.</p>
+            files and sidecars) go to a <code>Blurry</code> folder next to them, and can be undone.
+            Photos with a clear face are judged on the sharpness of the eyes against the eye threshold.</p>
+        <p class="muted">Shift-click a photo (or press B in the large view) to
+            <b style="color:var(--keep-blurry)">Keep blurry</b>: it stays where it is, but counts as blurry in
+            the training data.</p>
         <p class="muted" id="mode-help-random" hidden>A random sample of photos with any score, to collect
             training data that also covers blurry photos the score misses. Everything is marked
             <b style="color:var(--keep)">Keep</b>; click the blurry ones to <b style="color:var(--move)">Move</b>
@@ -109,7 +116,8 @@
                 <option value="random">Random sample (training data)</option>
             </select>
             <label>Threshold <input type="number" id="threshold" value="{{ default_threshold }}" min="0" step="10"></label>
-            <label><input type="checkbox" id="per-camera"> Per-camera thresholds</label>
+            <label>Eye threshold <input type="number" id="eye-threshold" value="{{ default_eye_threshold }}" min="0" step="10"></label>
+            <label><input type="checkbox" id="per-camera"> Use suggested thresholds</label>
             <select id="camera"><option value="">All cameras</option></select>
             <label><input type="checkbox" id="reviewed"> Include reviewed</label>
             <button onclick="loadCandidates()">Show photos</button>
@@ -120,8 +128,8 @@
         </div>
         <div class="grid" id="grid"></div>
         <div class="row" style="margin-top:12px" id="review-actions" hidden>
-            <button class="secondary" onclick="markAll(true)">Mark all Move</button>
-            <button class="secondary" onclick="markAll(false)">Mark all Keep</button>
+            <button class="secondary" onclick="markAll('move')">Mark all Move</button>
+            <button class="secondary" onclick="markAll('keep')">Mark all Keep</button>
             <button id="apply-btn" onclick="applyReview()">Apply</button>
         </div>
         <div class="muted" id="draft-info" style="margin-top:8px"></div>
@@ -137,8 +145,9 @@
     <div class="viewer-bar">
         <button class="secondary" onclick="step(-1)">&larr; Prev</button>
         <button class="secondary" onclick="step(1)">Next &rarr;</button>
-        <button class="choice move" id="viewer-move" onclick="setDecision(true)">Move (M)</button>
-        <button class="choice keep" id="viewer-keep" onclick="setDecision(false)">Keep (K)</button>
+        <button class="choice move" id="viewer-move" onclick="setDecision('move')">Move (M)</button>
+        <button class="choice keep" id="viewer-keep" onclick="setDecision('keep')">Keep (K)</button>
+        <button class="choice keep_blurry" id="viewer-keep_blurry" onclick="setDecision('keep_blurry')">Keep blurry (B)</button>
         <button class="secondary" id="viewer-zoom" onclick="toggleZoom()">100% (Z)</button>
         <span id="viewer-caption"></span>
         <span id="viewer-status"></span>
@@ -151,8 +160,9 @@
     const socket = io();
     let currentPath = '';
     let photos = [];          // current page of candidates
-    let decisions = {};       // path -> true (move) / false (keep)
-    let recommendations = {};
+    let decisions = {};       // path -> 'move' / 'keep' / 'keep_blurry'
+    let recommendations = []; // [name, suggestion] rows
+    const BADGES = { move: 'Move', keep: 'Keep', keep_blurry: 'Keep blurry' };
 
     const $ = id => document.getElementById(id);
     const enc = encodeURIComponent;
@@ -218,9 +228,9 @@
     // ---- Stats and per-camera recommendations ----
     async function loadStats() {
         const s = await api(`/api/stats?folder=${enc(currentPath)}`);
-        recommendations = s.recommendations;
         $('stats').textContent = s.images
-            ? `${s.images} photos scanned in this folder · ${s.moved} moved · ${s.kept} kept as sharp` +
+            ? `${s.images} photos scanned in this folder · ${s.faces} judged on the eyes · ${s.moved} moved · ` +
+              `${s.kept} kept as sharp` + (s.kept_blurry ? ` · ${s.kept_blurry} kept although blurry` : '') +
               (s.errors ? ` · ${s.errors} could not be read` : '')
             : 'This folder has not been scanned yet.';
 
@@ -235,19 +245,22 @@
         });
         select.value = selected;
 
-        const cams = Object.entries(recommendations);
-        $('per-camera').disabled = cams.length === 0 || $('mode').value === 'random';
-        $('recommendations').innerHTML = cams.length
-            ? '<table><tr><th>Camera</th><th>Suggested threshold</th><th>Based on</th></tr>' +
-              cams.map(([c, r]) => `<tr><td>${escapeHtml(c)}</td><td>${r.threshold}</td>` +
+        // One table: the eye threshold suggestion first, then one row per camera
+        recommendations = Object.entries(s.recommendations).map(([c, r]) => [escapeHtml(c), r]);
+        if (s.eye_recommendation) recommendations.unshift(['<i>Eyes (photos with a clear face)</i>', s.eye_recommendation]);
+        $('per-camera').disabled = recommendations.length === 0 || $('mode').value === 'random';
+        $('recommendations').innerHTML = recommendations.length
+            ? '<table><tr><th></th><th>Suggested threshold</th><th>Based on</th></tr>' +
+              recommendations.map(([name, r]) => `<tr><td>${name}</td><td>${r.threshold}</td>` +
                   `<td class="muted">${r.reviewed} reviewed, ${r.blurry} blurry</td></tr>`).join('') + '</table>'
-            : '<p class="muted">Per-camera threshold suggestions appear once you have reviewed about 40 photos ' +
-              'from a camera (at least 10 kept and 10 moved).</p>';
+            : '<p class="muted">Threshold suggestions appear once you have reviewed about 40 photos from a camera, ' +
+              'or 40 photos with a clear face (at least 10 sharp and 10 blurry).</p>';
 
         showDraftCount(s.drafts);
         const undo = $('undo-btn');
         undo.hidden = !s.last_batch;
-        if (s.last_batch) undo.textContent = `Undo last apply (${s.last_batch.moved} moved, ${s.last_batch.kept} kept)`;
+        if (s.last_batch) undo.textContent = `Undo last apply (${s.last_batch.moved} moved, ${s.last_batch.kept} kept` +
+            (s.last_batch.kept_blurry ? `, ${s.last_batch.kept_blurry} kept blurry)` : ')');
 
         $('labels').innerHTML = s.labelled
             ? `${s.labelled} reviewed photos in total (${s.labelled_blurry} blurry, ${s.labelled - s.labelled_blurry} sharp) ` +
@@ -257,8 +270,8 @@
 
     function modeChanged() {
         const random = $('mode').value === 'random';
-        $('threshold').disabled = random;
-        $('per-camera').disabled = random || Object.keys(recommendations).length === 0;
+        $('threshold').disabled = $('eye-threshold').disabled = random;
+        $('per-camera').disabled = random || recommendations.length === 0;
         $('mode-help-threshold').hidden = random;
         $('mode-help-random').hidden = !random;
         $('grid').innerHTML = '';
@@ -270,7 +283,8 @@
     async function loadCandidates() {
         const random = $('mode').value === 'random';
         const params = new URLSearchParams({
-            folder: currentPath, threshold: $('threshold').value, camera: $('camera').value, mode: $('mode').value,
+            folder: currentPath, threshold: $('threshold').value, eye_threshold: $('eye-threshold').value,
+            camera: $('camera').value, mode: $('mode').value,
             per_camera: $('per-camera').checked ? '1' : '0', reviewed: $('reviewed').checked ? '1' : '0',
         });
         let result;
@@ -281,10 +295,11 @@
             return;
         }
         photos = result.images;
-        // Saved (unapplied) decisions win; otherwise: below the threshold most photos are blurry,
-        // in a random sample most are sharp
-        decisions = Object.fromEntries(photos.map(p => [p.path, p.draft !== null && p.draft !== undefined
-            ? Boolean(p.draft) : random ? p.label === 'blurry' : p.label !== 'sharp']));
+        // Saved (unapplied) decisions win, then earlier reviews (a reviewed photo outside a Blurry folder
+        // labelled blurry was kept blurry); otherwise: below the threshold most photos are blurry, in a
+        // random sample most are sharp
+        decisions = Object.fromEntries(photos.map(p => [p.path, p.draft
+            || { sharp: 'keep', blurry: 'keep_blurry' }[p.label] || (random ? 'keep' : 'move')]));
         if (random) {
             $('candidate-info').textContent = result.total
                 ? `Showing ${photos.length} random photos out of ${result.total} not yet reviewed.`
@@ -302,18 +317,21 @@
         grid.innerHTML = '';
         photos.forEach(p => {
             const card = document.createElement('div');
-            card.className = 'card' + (decisions[p.path] ? '' : ' keep');
+            card.className = `card ${decisions[p.path]}`;
             card.innerHTML = `
-                <span class="badge">${decisions[p.path] ? 'Move' : 'Keep'}</span>
+                <span class="badge">${BADGES[decisions[p.path]]}</span>
                 <span class="zoom" title="View larger">&#128269;</span>
                 <img loading="lazy" src="/thumb?path=${enc(p.path)}&size=360&v=${p.mtime}" alt="">
                 <div class="meta">
                     <div class="name" title="${escapeHtml(p.path)}">${escapeHtml(p.path.split('/').pop())}</div>
-                    <div class="muted">score ${Math.round(p.score)}${exposureText(p)}</div>
+                    <div class="muted">${scoreText(p)}${exposureText(p)}</div>
                     <div class="muted name">${escapeHtml(p.camera || 'unknown camera')}</div>
                 </div>`;
-            card.onclick = () => {
-                decisions[p.path] = !decisions[p.path];
+            // Click: Move <-> Keep; Shift-click: Keep blurry
+            card.onclick = event => {
+                const current = decisions[p.path];
+                decisions[p.path] = event.shiftKey ? (current === 'keep_blurry' ? 'keep' : 'keep_blurry')
+                    : current === 'move' ? 'keep' : 'move';
                 saveDecisions([p.path]);
                 renderGrid();
             };
@@ -323,13 +341,14 @@
             };
             grid.appendChild(card);
         });
-        const moveCount = Object.values(decisions).filter(Boolean).length;
+        const count = decision => photos.filter(p => decisions[p.path] === decision).length;
         $('review-actions').hidden = photos.length === 0;
-        $('apply-btn').textContent = `Apply: move ${moveCount}, keep ${photos.length - moveCount}`;
+        $('apply-btn').textContent = `Apply: move ${count('move')}, keep ${count('keep')}` +
+            (count('keep_blurry') ? `, keep blurry ${count('keep_blurry')}` : '');
     }
 
-    function markAll(move) {
-        photos.forEach(p => decisions[p.path] = move);
+    function markAll(decision) {
+        photos.forEach(p => decisions[p.path] = decision);
         saveDecisions(photos.map(p => p.path));
         renderGrid();
     }
@@ -391,12 +410,10 @@
 
     function updateViewer() {
         const p = photos[viewIndex];
-        const move = decisions[p.path];
         $('viewer-caption').textContent = `${viewIndex + 1}/${photos.length} · ${p.path} · ${p.width}×${p.height} · ` +
-            `score ${Math.round(p.score)}${exposureText(p)} · ${p.camera || 'unknown camera'}`;
-        $('viewer-move').classList.toggle('active', move);
-        $('viewer-keep').classList.toggle('active', !move);
-        $('viewer-zoom').textContent = zoomed ? 'Fit (Z)' : '100% (Z)';
+            `${scoreText(p)}${exposureText(p)} · ${p.camera || 'unknown camera'}`;
+        Object.keys(BADGES).forEach(d => $(`viewer-${d}`).classList.toggle('active', decisions[p.path] === d));
+        $('viewer-zoom').textContent = zoomed ? 'Fit (Z)' : hasEye(p) ? '100% at the eye (Z)' : '100% (Z)';
     }
 
     function closeViewer() {
@@ -406,17 +423,22 @@
         renderGrid();  // show decisions made in the viewer
     }
 
-    function setDecision(move) {
+    function setDecision(decision) {
         const path = photos[viewIndex].path;
-        decisions[path] = move;
+        decisions[path] = decision;
         saveDecisions([path]);
         updateViewer();
     }
 
+    // At 100 %, the next photo opens at its sharpest eye if it has one, otherwise on the same spot
     function step(delta) {
         const index = viewIndex + delta;
-        if (index >= 0 && index < photos.length) openViewer(index, zoomed ? viewCentre() : null);
+        if (index < 0 || index >= photos.length) return;
+        openViewer(index, !zoomed ? null : hasEye(photos[index]) ? eyePoint(photos[index]) : viewCentre());
     }
+
+    function hasEye(p) { return p.eye_x !== null && p.eye_x !== undefined; }
+    function eyePoint(p) { return [p.eye_x, p.eye_y]; }
 
     function setFit() {
         const img = $('viewer-img');
@@ -450,12 +472,15 @@
         full.src = `/original?path=${enc(p.path)}&v=${p.mtime}`;
     }
 
-    function toggleZoom(fx = 0.5, fy = 0.5) {
+    // Without a point (Z key, button) 100 % opens at the sharpest eye, or the centre
+    function toggleZoom(fx, fy) {
         if (zoomed) {
             setFit();
             updateViewer();
-        } else {
+        } else if (fx !== undefined) {
             zoomTo(fx, fy);
+        } else {
+            zoomTo(...(hasEye(photos[viewIndex]) ? eyePoint(photos[viewIndex]) : [0.5, 0.5]));
         }
     }
 
@@ -492,7 +517,8 @@
         if ($('overlay').hidden) return;
         const actions = {
             escape: closeViewer, arrowright: () => step(1), arrowleft: () => step(-1),
-            m: () => setDecision(true), k: () => setDecision(false), z: () => toggleZoom(),
+            m: () => setDecision('move'), k: () => setDecision('keep'), b: () => setDecision('keep_blurry'),
+            z: () => toggleZoom(),
         };
         const action = actions[event.key.toLowerCase()];
         if (action) {
@@ -502,14 +528,16 @@
     });
 
     async function applyReview() {
-        const move = photos.filter(p => decisions[p.path]).map(p => p.path);
-        const keep = photos.filter(p => !decisions[p.path]).map(p => p.path);
+        const pick = decision => photos.filter(p => decisions[p.path] === decision).map(p => p.path);
         $('apply-btn').disabled = true;
         try {
             const r = await api('/api/apply', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ move, keep, mode: $('mode').value }),
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ move: pick('move'), keep: pick('keep'), keep_blurry: pick('keep_blurry'),
+                                       mode: $('mode').value }),
             });
-            $('review-status').textContent = `Moved ${r.moved}, kept ${r.kept}.` +
+            $('review-status').textContent = `Moved ${r.moved}, kept ${r.kept}` +
+                (r.kept_blurry ? `, kept ${r.kept_blurry} blurry.` : '.') +
                 (r.errors.length ? ` ${r.errors.length} errors: ${r.errors.join('; ')}` : '');
         } catch (e) {
             alert(e.message);
@@ -523,13 +551,19 @@
     async function undoLast() {
         try {
             const r = await api('/api/undo', { method: 'POST' });
-            $('review-status').textContent = `Restored ${r.restored} photos.` +
+            $('review-status').textContent = `Restored ${r.restored} photos with your decisions, ready to change and apply again.` +
                 (r.errors.length ? ` ${r.errors.length} errors: ${r.errors.join('; ')}` : '');
         } catch (e) {
             alert(e.message);
         }
         await loadStats();
         await loadCandidates();
+    }
+
+    // Photos with a clear face are judged on the eyes; the whole-photo score is shown for comparison
+    function scoreText(p) {
+        return p.eye_score !== null && p.eye_score !== undefined
+            ? `eyes ${Math.round(p.eye_score)} · whole ${Math.round(p.score)}` : `score ${Math.round(p.score)}`;
     }
 
     // ISO and shutter speed matter when judging: high ISO noise reduction can look like blur,

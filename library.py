@@ -16,9 +16,13 @@ import uuid
 from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime, timezone
 
-from scoring import is_image, score_file
+from scoring import DEFAULT_EYE_THRESHOLD, SCORE_VERSION, is_image, score_file
 
 BLURRY_FOLDER_NAME = 'Blurry'
+IN_BLURRY_FOLDER = f"'/' || path LIKE '%/{BLURRY_FOLDER_NAME}/%'"
+# Review decisions: move to the Blurry folder, keep as sharp, or keep although it is blurry (a photo
+# you want to keep anyway still counts as blurry in the training data)
+DECISIONS = ('move', 'keep', 'keep_blurry')
 # Files with the same name as a photo that belong to it and must move with it:
 # Live Photo videos, iPhone edit sidecars, RAW files from RAW+JPEG shooting, XMP metadata.
 COMPANION_EXTENSIONS = {'.mov', '.aae', '.xmp', '.dng', '.raf', '.cr2', '.cr3', '.nef', '.arw', '.orf', '.rw2'}
@@ -28,11 +32,13 @@ CREATE TABLE IF NOT EXISTS images (
     path TEXT PRIMARY KEY,
     mtime REAL, size INTEGER,
     score REAL, global_score REAL,
+    eye_score REAL, eye_x REAL, eye_y REAL,  -- sharpest eye, NULL if no face counts; position as fractions
+    faces INTEGER,
     width INTEGER, height INTEGER,
     camera TEXT, taken TEXT, exposure REAL, fnumber REAL, iso REAL, focal REAL,
     error TEXT,
-    label TEXT,          -- NULL = not reviewed, 'sharp' = kept after review, 'blurry' = moved
-    scored_at TEXT
+    label TEXT,          -- NULL = not reviewed, 'sharp' or 'blurry' (moved, or kept although blurry)
+    scored_at TEXT, score_version INTEGER
 );
 -- Every review decision, so an apply can be undone completely and training data can account for
 -- how photos were picked for review ('threshold' = below the threshold, 'random' = random sample)
@@ -45,7 +51,7 @@ CREATE INDEX IF NOT EXISTS reviews_batch ON reviews(batch);
 -- Decisions made on the review page but not applied yet, so a review can be continued later
 CREATE TABLE IF NOT EXISTS drafts (
     path TEXT PRIMARY KEY,
-    move INTEGER,        -- 1 = Move, 0 = Keep
+    decision TEXT,       -- one of DECISIONS
     updated_at TEXT
 );
 CREATE TABLE IF NOT EXISTS moves (
@@ -55,8 +61,12 @@ CREATE TABLE IF NOT EXISTS moves (
 );
 CREATE INDEX IF NOT EXISTS moves_batch ON moves(batch);
 """
-SCORE_FIELDS = ['score', 'global_score', 'width', 'height', 'camera', 'taken',
-                'exposure', 'fnumber', 'iso', 'focal', 'error']
+SCORE_FIELDS = ['score', 'global_score', 'eye_score', 'eye_x', 'eye_y', 'faces', 'width', 'height', 'camera',
+                'taken', 'exposure', 'fnumber', 'iso', 'focal', 'error']
+# Columns added after the first version, for databases created before them
+NEW_COLUMNS = {'images': {'eye_score': 'REAL', 'eye_x': 'REAL', 'eye_y': 'REAL', 'faces': 'INTEGER',
+                          'score_version': 'INTEGER'},
+               'drafts': {'decision': 'TEXT'}}
 
 
 def now():
@@ -69,7 +79,19 @@ def connect(db_path):
     conn.row_factory = sqlite3.Row
     conn.execute('PRAGMA journal_mode=WAL')
     conn.executescript(SCHEMA)
+    migrate(conn)
     return conn
+
+
+def migrate(conn):
+    for table, columns in NEW_COLUMNS.items():
+        existing = {r['name'] for r in conn.execute(f'PRAGMA table_info({table})')}
+        for name, kind in columns.items():
+            if name not in existing:
+                conn.execute(f'ALTER TABLE {table} ADD COLUMN {name} {kind}')
+                if (table, name) == ('drafts', 'decision'):  # drafts used to store move = 1/0
+                    conn.execute("UPDATE drafts SET decision = CASE move WHEN 1 THEN 'move' ELSE 'keep' END")
+    conn.commit()
 
 
 def to_rel(root, path):
@@ -102,12 +124,13 @@ def walk_images(root, folder):
 
 
 def scan(conn, root, folder='', workers=None, log=print):
-    """Score new and changed images under folder; forget images that no longer exist."""
+    """Score new and changed images under folder, and those scored by an older version of the
+    scoring; forget images that no longer exist. Review decisions are kept unless the file changed."""
     log(f'[scan] Looking for images in /{folder}')
-    known = {r['path']: (r['mtime'], r['size'])
-             for r in conn.execute(f'SELECT path, mtime, size FROM images WHERE {in_folder_sql(folder)[0]}',
-                                   in_folder_sql(folder)[1])}
-    seen, todo = set(), []
+    known = {r['path']: (r['mtime'], r['size'], r['score_version'])
+             for r in conn.execute(f'SELECT path, mtime, size, score_version FROM images '
+                                   f'WHERE {in_folder_sql(folder)[0]}', in_folder_sql(folder)[1])}
+    seen, todo, outdated = set(), [], 0
     for path in walk_images(root, folder):
         rel = to_rel(root, path)
         try:
@@ -115,9 +138,21 @@ def scan(conn, root, folder='', workers=None, log=print):
         except OSError:  # removed while scanning
             continue
         seen.add(rel)
-        if known.get(rel) != (st.st_mtime, st.st_size):
+        old = known.get(rel)
+        if old is None or old[:2] != (st.st_mtime, st.st_size):
             todo.append((rel, path, st.st_mtime, st.st_size))
-    log(f'[scan] {len(seen)} images found, {len(todo)} new or changed')
+        elif (old[2] or 1) < SCORE_VERSION:
+            todo.append((rel, path, st.st_mtime, st.st_size))
+            outdated += 1
+    # Moved photos are not scanned again, but are scored again so their labels stay useful
+    for rel, (mtime, size, version) in known.items():
+        if (version or 1) < SCORE_VERSION and rel not in seen and f'/{BLURRY_FOLDER_NAME}/' in f'/{rel}':
+            path = to_abs(root, rel)
+            if os.path.exists(path):
+                todo.append((rel, path, mtime, size))
+                outdated += 1
+    log(f'[scan] {len(seen)} images found, {len(todo) - outdated} new or changed'
+        + (f', {outdated} to score again with the improved scoring' if outdated else ''))
 
     # Rows outside Blurry folders whose file is gone were deleted or moved by hand
     gone = [p for p in known if p not in seen and f'/{BLURRY_FOLDER_NAME}/' not in f'/{p}'
@@ -133,11 +168,14 @@ def scan(conn, root, folder='', workers=None, log=print):
         for (rel, path, mtime, size), result in zip(todo, pool.map(score_file, [t[1] for t in todo], chunksize=16)):
             values = [result.get(f) for f in SCORE_FIELDS]
             conn.execute(
-                f'INSERT INTO images (path, mtime, size, {", ".join(SCORE_FIELDS)}, label, scored_at) '
-                f'VALUES (?, ?, ?, {", ".join("?" * len(SCORE_FIELDS))}, NULL, ?) '
-                f'ON CONFLICT(path) DO UPDATE SET mtime=excluded.mtime, size=excluded.size, '
-                f'{", ".join(f"{f}=excluded.{f}" for f in SCORE_FIELDS)}, label=NULL, scored_at=excluded.scored_at',
-                [rel, mtime, size, *values, now()])
+                f'INSERT INTO images (path, mtime, size, {", ".join(SCORE_FIELDS)}, label, scored_at, score_version) '
+                f'VALUES (?, ?, ?, {", ".join("?" * len(SCORE_FIELDS))}, NULL, ?, ?) '
+                f'ON CONFLICT(path) DO UPDATE SET '
+                f'label = CASE WHEN mtime = excluded.mtime AND size = excluded.size THEN label END, '
+                f'mtime=excluded.mtime, size=excluded.size, '
+                f'{", ".join(f"{f}=excluded.{f}" for f in SCORE_FIELDS)}, scored_at=excluded.scored_at, '
+                f'score_version=excluded.score_version',
+                [rel, mtime, size, *values, now(), SCORE_VERSION])
             done += 1
             if done % 100 == 0 or done == len(todo):
                 conn.commit()
@@ -152,21 +190,26 @@ def scan(conn, root, folder='', workers=None, log=print):
 
 
 def candidates(conn, folder='', threshold=None, camera=None, include_reviewed=False, limit=60, offset=0,
-               camera_thresholds=None, random_order=False):
+               camera_thresholds=None, random_order=False, eye_threshold=DEFAULT_EYE_THRESHOLD):
     """Unreviewed images below threshold in folder, blurriest first, plus the total count.
-    camera_thresholds ({camera: threshold}) overrides threshold for those cameras.
-    random_order returns a random sample instead (use threshold=None to sample all scores)."""
+
+    Photos with an eye score are judged on it against eye_threshold, all others on the score
+    against threshold; camera_thresholds ({camera: threshold}) overrides threshold for those cameras.
+    Blurriest first means lowest relative to the threshold that applies. random_order returns a
+    random sample instead (use threshold=None to sample all scores)."""
     where, params = in_folder_sql(folder)
-    where += f" AND error IS NULL AND '/' || path NOT LIKE '%/{BLURRY_FOLDER_NAME}/%'"
-    if threshold is not None and camera_thresholds:
-        cases = ' '.join('WHEN ? THEN ?' for _ in camera_thresholds)
-        where += f" AND score < CASE COALESCE(camera, '(unknown)') {cases} ELSE ? END"
-        for cam, t in camera_thresholds.items():
-            params += [cam, t]
-        params.append(threshold)
-    elif threshold is not None:
-        where += ' AND score < ?'
-        params.append(threshold)
+    where += f' AND error IS NULL AND NOT {IN_BLURRY_FOLDER}'
+    order, order_params = 'score', []
+    if threshold is not None:
+        limit_sql, limit_params = '?', [threshold]
+        if camera_thresholds:
+            cases = ' '.join('WHEN ? THEN ?' for _ in camera_thresholds)
+            limit_sql = f"CASE COALESCE(camera, '(unknown)') {cases} ELSE ? END"
+            limit_params = [v for cam, t in camera_thresholds.items() for v in (cam, t)] + [threshold]
+        where += f' AND CASE WHEN eye_score IS NOT NULL THEN eye_score < ? ELSE score < {limit_sql} END'
+        params += [eye_threshold, *limit_params]
+        order = f'CASE WHEN eye_score IS NOT NULL THEN eye_score / ? ELSE score / {limit_sql} END'
+        order_params = [eye_threshold, *limit_params]
     if camera:
         where += ' AND camera IS ?' if camera != '(unknown)' else ' AND camera IS NULL'
         if camera != '(unknown)':
@@ -175,10 +218,11 @@ def candidates(conn, folder='', threshold=None, camera=None, include_reviewed=Fa
         where += ' AND label IS NULL'
     total = conn.execute(f'SELECT COUNT(*) FROM images WHERE {where}', params).fetchone()[0]
     # A random sample starts with the photos that have unapplied decisions, so a review can be resumed
-    order = 'd.path IS NULL, random()' if random_order else 'score'
-    rows = conn.execute(f'SELECT images.*, d.move AS draft FROM images LEFT JOIN drafts d USING (path) '
+    if random_order:
+        order, order_params = 'd.path IS NULL, random()', []
+    rows = conn.execute(f'SELECT images.*, d.decision AS draft FROM images LEFT JOIN drafts d USING (path) '
                         f'WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?',
-                        params + [limit, 0 if random_order else offset]).fetchall()
+                        params + order_params + [limit, 0 if random_order else offset]).fetchall()
     return total, [dict(r) for r in rows]
 
 
@@ -190,31 +234,51 @@ def recommend_thresholds(conn, window=20, min_reviewed=40, min_each=10):
     i.e. roughly where moved photos stop outnumbering kept ones. Above that point,
     most photos you looked at were sharp, so reviewing them is mostly wasted effort. Needs at least
     `min_reviewed` reviewed photos with `min_each` of each label. Returns {camera: {...}}.
+    Photos judged on their eyes are left out; see recommend_eye_threshold.
     """
     result = {}
     rows = conn.execute("SELECT COALESCE(camera, '(unknown)') AS camera, score, label FROM images "
-                        "WHERE label IS NOT NULL AND error IS NULL ORDER BY camera, score").fetchall()
+                        "WHERE label IS NOT NULL AND error IS NULL AND eye_score IS NULL "
+                        "ORDER BY camera, score").fetchall()
     by_camera = {}
     for r in rows:
         by_camera.setdefault(r['camera'], []).append((r['score'], r['label'] == 'blurry'))
     for camera, items in by_camera.items():
-        blurry = sum(b for _, b in items)
-        if len(items) < min_reviewed or blurry < min_each or len(items) - blurry < min_each:
-            continue
-        best = None
-        for i in range(window, len(items) + 1):
-            if sum(b for _, b in items[i - window:i]) * 2 >= window:
-                best = items[i - window // 2][0]
-        if best is not None:
-            result[camera] = {'threshold': round(best), 'reviewed': len(items), 'blurry': blurry}
+        suggestion = suggest_threshold(items, window, min_reviewed, min_each)
+        if suggestion:
+            result[camera] = suggestion
     return result
+
+
+def recommend_eye_threshold(conn, window=20, min_reviewed=40, min_each=10):
+    """Eye threshold suggestion learned from the reviewed photos with an eye score, the same way as
+    recommend_thresholds. Eye scores are measured at a fixed face size, so one threshold fits all
+    cameras. Returns {'threshold', 'reviewed', 'blurry'} or None."""
+    rows = conn.execute("SELECT eye_score, label FROM images WHERE label IS NOT NULL AND error IS NULL "
+                        "AND eye_score IS NOT NULL ORDER BY eye_score").fetchall()
+    return suggest_threshold([(r['eye_score'], r['label'] == 'blurry') for r in rows],
+                             window, min_reviewed, min_each)
+
+
+def suggest_threshold(items, window, min_reviewed, min_each):
+    """items: (score, is blurry) sorted by score."""
+    blurry = sum(b for _, b in items)
+    if len(items) < min_reviewed or blurry < min_each or len(items) - blurry < min_each:
+        return None
+    best = None
+    for i in range(window, len(items) + 1):
+        if sum(b for _, b in items[i - window:i]) * 2 >= window:
+            best = items[i - window // 2][0]
+    return None if best is None else {'threshold': round(best), 'reviewed': len(items), 'blurry': blurry}
 
 
 def stats(conn, folder=''):
     where, params = in_folder_sql(folder)
     row = conn.execute(
         f"SELECT COUNT(*) AS images, SUM(error IS NOT NULL) AS errors, SUM(label = 'sharp') AS kept, "
-        f"SUM(label = 'blurry') AS moved FROM images WHERE {where}", params).fetchone()
+        f"SUM(label = 'blurry' AND {IN_BLURRY_FOLDER}) AS moved, "
+        f"SUM(label = 'blurry' AND NOT {IN_BLURRY_FOLDER}) AS kept_blurry, "
+        f"SUM(eye_score IS NOT NULL) AS faces FROM images WHERE {where}", params).fetchone()
     cameras = conn.execute(
         f"SELECT COALESCE(camera, '(unknown)') AS camera, COUNT(*) AS images FROM images "
         f"WHERE {where} AND error IS NULL GROUP BY 1 ORDER BY 2 DESC", params).fetchall()
@@ -260,10 +324,12 @@ def move_group(files, dst_folder):
 
 
 def save_drafts(conn, decisions):
-    """Store unapplied review decisions ({path: True for Move, False for Keep})."""
-    conn.executemany('INSERT INTO drafts (path, move, updated_at) VALUES (?, ?, ?) '
-                     'ON CONFLICT(path) DO UPDATE SET move = excluded.move, updated_at = excluded.updated_at',
-                     [(path, int(bool(move)), now()) for path, move in decisions.items()])
+    """Store unapplied review decisions ({path: one of DECISIONS})."""
+    if any(d not in DECISIONS for d in decisions.values()):
+        raise ValueError(f'decisions must be one of {DECISIONS}')
+    conn.executemany('INSERT INTO drafts (path, decision, updated_at) VALUES (?, ?, ?) ON CONFLICT(path) '
+                     'DO UPDATE SET decision = excluded.decision, updated_at = excluded.updated_at',
+                     [(path, decision, now()) for path, decision in decisions.items()])
     conn.commit()
 
 
@@ -276,10 +342,10 @@ def current_label(conn, rel):
     return row['label'] if row else None
 
 
-def apply_review(conn, root, move=(), keep=(), mode='threshold'):
+def apply_review(conn, root, move=(), keep=(), mode='threshold', keep_blurry=()):
     """Move the photos in `move` (with companions) to a Blurry folder next to them and label them
-    blurry; label the photos in `keep` as sharp. `mode` records how the photos were picked for
-    review. Returns (batch id, number moved, errors)."""
+    blurry; label the photos in `keep` as sharp and those in `keep_blurry` as blurry without moving
+    them. `mode` records how the photos were picked for review. Returns (batch id, number moved, errors)."""
     batch, moved, errors = uuid.uuid4().hex[:12], 0, []
     for rel in move:
         src = to_abs(root, rel)
@@ -298,26 +364,29 @@ def apply_review(conn, root, move=(), keep=(), mode='threshold'):
         conn.execute('DELETE FROM drafts WHERE path = ?', (rel,))
         conn.commit()
         moved += 1
-    for rel in keep:
+    for rel, label in [(rel, 'sharp') for rel in keep] + [(rel, 'blurry') for rel in keep_blurry]:
         conn.execute('DELETE FROM drafts WHERE path = ?', (rel,))
         prev = current_label(conn, rel)
-        conn.execute("UPDATE images SET label = 'sharp' WHERE path = ?", (rel,))
-        conn.execute("INSERT INTO reviews (batch, image, label, prev_label, mode, reviewed_at) "
-                     "VALUES (?, ?, 'sharp', ?, ?, ?)", (batch, rel, prev, mode, now()))
+        conn.execute('UPDATE images SET label = ? WHERE path = ?', (label, rel))
+        conn.execute('INSERT INTO reviews (batch, image, label, prev_label, mode, reviewed_at) '
+                     'VALUES (?, ?, ?, ?, ?, ?)', (batch, rel, label, prev, mode, now()))
     conn.commit()
     return batch, moved, errors
 
 
 def last_batch(conn):
-    row = conn.execute("SELECT batch, SUM(label = 'blurry') AS moved, SUM(label = 'sharp') AS kept, "
-                       "MAX(reviewed_at) AS reviewed_at FROM reviews WHERE undone_at IS NULL "
-                       "GROUP BY batch ORDER BY MAX(id) DESC LIMIT 1").fetchone()
+    # A photo was moved if the batch has a move whose destination is the reviewed photo itself
+    row = conn.execute("SELECT r.batch, SUM(m.id IS NOT NULL) AS moved, SUM(r.label = 'sharp') AS kept, "
+                       "SUM(r.label = 'blurry' AND m.id IS NULL) AS kept_blurry, MAX(r.reviewed_at) AS reviewed_at "
+                       "FROM reviews r LEFT JOIN moves m ON m.batch = r.batch AND m.dst = r.image "
+                       "WHERE r.undone_at IS NULL GROUP BY r.batch ORDER BY MAX(r.id) DESC LIMIT 1").fetchone()
     return dict(row) if row else None
 
 
 def undo(conn, root, batch):
-    """Undo an apply: move every file of the batch back to where it came from and reset the labels
-    of the photos that were kept. Returns (restored photos, errors)."""
+    """Undo an apply: move every file of the batch back to where it came from and reset the labels.
+    The decisions of the batch become unapplied decisions again, so the review can be corrected and
+    applied again. Returns (restored photos, errors)."""
     errors, restored = [], set()
     for m in conn.execute('SELECT * FROM moves WHERE batch = ? AND undone_at IS NULL ORDER BY id', (batch,)).fetchall():
         src, dst = to_abs(root, m['src']), to_abs(root, m['dst'])
@@ -338,25 +407,29 @@ def undo(conn, root, batch):
         if os.path.basename(folder) == BLURRY_FOLDER_NAME and not os.listdir(folder):
             os.rmdir(folder)  # don't leave empty Blurry folders behind
 
+    decisions = {}
     for r in conn.execute('SELECT * FROM reviews WHERE batch = ? AND undone_at IS NULL', (batch,)).fetchall():
-        if r['label'] == 'sharp':
-            conn.execute('UPDATE images SET label = ? WHERE path = ?', (r['prev_label'], r['image']))
+        move = conn.execute('SELECT src, undone_at FROM moves WHERE batch = ? AND dst = ?',
+                            (batch, r['image'])).fetchone()
+        if move is None:  # kept, nothing to move back
+            path, decision = r['image'], 'keep' if r['label'] == 'sharp' else 'keep_blurry'
+        elif move['undone_at'] is None:
+            continue  # the move back failed; leave it so undo can be retried
         else:
-            moved_back = conn.execute('SELECT src FROM moves WHERE batch = ? AND dst = ? AND undone_at IS NOT NULL',
-                                      (batch, r['image'])).fetchone()
-            if moved_back is None:
-                continue  # the move back failed; leave it so undo can be retried
-            conn.execute('UPDATE images SET label = ? WHERE path = ?', (r['prev_label'], moved_back['src']))
+            path, decision = move['src'], 'move'
+        conn.execute('UPDATE images SET label = ? WHERE path = ?', (r['prev_label'], path))
+        decisions[path] = decision
         restored.add(r['image'])
         conn.execute('UPDATE reviews SET undone_at = ? WHERE id = ?', (now(), r['id']))
-    conn.commit()
+    save_drafts(conn, decisions)
     return len(restored), errors
 
 
 def export_labels(conn):
     """All reviewed photos with their label, score and EXIF, for training a model."""
     return conn.execute(
-        "SELECT i.path, i.label, i.score, i.global_score, i.camera, i.taken, i.exposure, i.fnumber, i.iso, "
+        f"SELECT i.path, i.label, {IN_BLURRY_FOLDER.replace('path', 'i.path')} AS moved, i.score, "
+        "i.global_score, i.eye_score, i.faces, i.camera, i.taken, i.exposure, i.fnumber, i.iso, "
         "i.focal, i.width, i.height, r.mode, r.reviewed_at FROM images i "
         "LEFT JOIN reviews r ON r.id = (SELECT MAX(id) FROM reviews WHERE image = i.path AND undone_at IS NULL) "
         "WHERE i.label IS NOT NULL ORDER BY r.reviewed_at").fetchall()

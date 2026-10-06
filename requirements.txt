@@ -2,5 +2,6 @@ Flask
 Flask-SocketIO
 eventlet
 numpy
+opencv-python-headless>=4.8
 Pillow
 pillow-heif
